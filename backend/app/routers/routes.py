@@ -46,7 +46,7 @@ def decode_polyline(polyline_str: str) -> List[List[float]]:
 
 
 async def fetch_google_directions(origin: str, destination: str) -> Optional[List[List[float]]]:
-    """Queries Google Maps Directions API for real road driving polyline."""
+    """Queries Google Maps Directions API for driving polyline."""
     if not settings.GOOGLE_MAPS_API_KEY:
         return None
         
@@ -74,12 +74,14 @@ async def get_route_safety(
     db: Session = Depends(get_db)
 ):
     """
-    Spec §15 & Frontend Spec §4.1:
-    Route-risk scoring using Google Maps Directions API & spatial hazard detection.
+    Spec §0 Constraint #1, Spec §13, §15 & Phase 8:
+    Annotates spatial hazard risk along a trip polyline.
+    Strict Framing: Polyline stretches without official road_segment_id mapping are framed
+    strictly as 'Hazard Location Intelligence Stretches', never as fabricated official RoadSegments.
     """
     polyline = req.polyline
 
-    # If origin & destination provided, query Google Maps Directions API
+    # Query Google Maps Directions API if origin & destination are provided
     if origin and destination:
         google_poly = await fetch_google_directions(origin, destination)
         if google_poly:
@@ -88,7 +90,7 @@ async def get_route_safety(
     if not polyline or len(polyline) < 2:
         raise HTTPException(status_code=400, detail="Must provide valid polyline or origin & destination search parameters")
 
-    # Query active hazards
+    # Query active spatial hazards along path
     active_events = db.query(RoadEvent).filter(RoadEvent.status.in_(["unverified", "verified"])).all()
 
     matched_hazards = []
@@ -106,23 +108,25 @@ async def get_route_safety(
 
     overall_score = max(0.0, min(100.0, round(100.0 - total_penalty, 1)))
 
-    segment_scores = []
+    # Phase 8: Do NOT fabricate official RoadSegment objects.
+    # Framed as Hazard Location Intelligence Stretches.
+    segment_stretches = []
     for i in range(len(polyline) - 1):
-        segment_scores.append({
-            "segment_index": i,
+        segment_stretches.append({
+            "stretch_index": i,
             "start_point": polyline[i],
             "end_point": polyline[i+1],
-            "is_road_network_scored": True if origin and destination else False,
-            "framing_label": "Google Maps Navigated Road Segment" if origin and destination else "Hazard Location Intelligence Stretch",
-            "local_safety_score": max(50.0, overall_score)
+            "is_road_network_scored": False, # Official segment score requires backfilled road_segment_id
+            "framing_label": "Hazard Location Intelligence Stretch",
+            "hazard_density_penalty": round(total_penalty / (len(polyline) - 1), 2)
         })
 
     hazards_response = [RoadEventResponse.model_validate(h) for h in matched_hazards]
 
     return RouteSafetyResponse(
         overall_safety_score=overall_score,
-        scored_segments_count=len(polyline) - 1 if origin and destination else 0,
-        unscored_stretches_count=0 if origin and destination else len(polyline) - 1,
+        scored_segments_count=0, # 0 fabricated official segments per Phase 8
+        unscored_stretches_count=len(polyline) - 1,
         detected_hazards_on_route=hazards_response,
-        segment_scores=segment_scores
+        segment_scores=segment_stretches
     )

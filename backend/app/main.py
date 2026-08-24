@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -13,8 +14,10 @@ from app.auth.security import decode_jwt_token
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("roadsentinel_backend")
 
-# Create database tables automatically
-Base.metadata.create_all(bind=engine)
+# Phase 2: Schema management handled via Alembic migrations in production.
+# create_all is only executed for development/test environment bootstrapping when explicitly enabled.
+if os.getenv("AUTO_CREATE_TABLES", "false").lower() == "true":
+    Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -22,7 +25,7 @@ app = FastAPI(
     description="ROADSentinel — Road Hazard Detection & Spatial Intelligence Platform (v0.4 Implementation Baseline)"
 )
 
-# Enable CORS for local Vite dev server and browser app
+# Enable CORS for Vite dev server and web dashboard
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -61,17 +64,27 @@ async def websocket_endpoint(
     websocket: WebSocket,
     token: str = Query(None)
 ):
-    """Spec §7: Authenticated Real-time WebSocket connection endpoint with bbox subscriptions (Fix #4)."""
-    # 1. Extract & Validate JWT Token before accepting connection
+    """Spec §7 & Phase 6: Authenticated Real-time WebSocket connection endpoint."""
+    # 1. Extract token from query parameter or Authorization header
     query_token = token or websocket.query_params.get("token")
     auth_header = websocket.headers.get("authorization")
     if auth_header and auth_header.startswith("Bearer "):
         query_token = auth_header.split(" ")[1]
 
-    # Validate token if provided or permit connection with auth check
-    payload = decode_jwt_token(query_token) if query_token else None
-    
-    # Accept connection and manage lifecycle
+    # 2. Reject missing token (Phase 6 requirement)
+    if not query_token:
+        logger.warning("WebSocket connection attempt rejected: missing authentication token.")
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Authentication token missing")
+        return
+
+    # 3. Validate token before accepting connection (Phase 6 requirement)
+    payload = decode_jwt_token(query_token)
+    if not payload:
+        logger.warning("WebSocket connection attempt rejected: invalid or expired access token.")
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Invalid or expired access token")
+        return
+
+    # 4. Accept connection after successful authentication
     await ws_manager.connect(websocket)
     
     try:

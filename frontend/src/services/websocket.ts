@@ -2,29 +2,43 @@ type EventCallback = (type: string, data: any) => void;
 
 class WebSocketClient {
   private socket: WebSocket | null = null;
-  private url = import.meta.env.VITE_WS_URL || 'ws://localhost:8000/ws';
+  private baseUrl = import.meta.env.VITE_WS_URL || 'ws://localhost:8000/ws';
   private currentBbox: [number, number, number, number] | null = null;
   private listeners: EventCallback[] = [];
+  private onReconnectCallbacks: Array<() => void> = [];
   private isConnected = false;
   private reconnectAttempts = 0;
   private maxReconnectDelay = 30000;
+  private token: string | null = null;
 
-  public connect() {
+  public connect(authToken?: string) {
+    if (authToken) {
+      this.token = authToken;
+    }
+
     if (this.socket && (this.socket.readyState === WebSocket.CONNECTING || this.socket.readyState === WebSocket.OPEN)) {
       return;
     }
 
+    const wsUrl = this.token ? `${this.baseUrl}?token=${encodeURIComponent(this.token)}` : this.baseUrl;
+
     try {
-      this.socket = new WebSocket(this.url);
+      this.socket = new WebSocket(wsUrl);
 
       this.socket.onopen = () => {
         console.log('WebSocket connected to ROADSentinel Real-time Layer');
+        const wasReconnect = this.reconnectAttempts > 0;
         this.isConnected = true;
         this.reconnectAttempts = 0;
 
         // Re-subscribe to bounding box if present
         if (this.currentBbox) {
           this.subscribeBbox(this.currentBbox);
+        }
+
+        // Phase 7: Trigger reconnect reconciliation callbacks
+        if (wasReconnect) {
+          this.onReconnectCallbacks.forEach((cb) => cb());
         }
       };
 
@@ -39,7 +53,7 @@ class WebSocketClient {
 
       this.socket.onclose = () => {
         this.isConnected = false;
-        console.warn('WebSocket connection closed. Attempting reconnect...');
+        console.warn('WebSocket connection closed. Attempting reconnect with exponential backoff...');
         this.scheduleReconnect();
       };
 
@@ -73,6 +87,13 @@ class WebSocketClient {
     this.listeners.push(cb);
     return () => {
       this.listeners = this.listeners.filter((l) => l !== cb);
+    };
+  }
+
+  public onReconnect(cb: () => void) {
+    this.onReconnectCallbacks.push(cb);
+    return () => {
+      this.onReconnectCallbacks = this.onReconnectCallbacks.filter((c) => c !== cb);
     };
   }
 

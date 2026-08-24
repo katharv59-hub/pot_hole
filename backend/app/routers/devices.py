@@ -21,7 +21,7 @@ def register_device(
     db: Session = Depends(get_db),
     admin: User = Depends(require_role(["admin"]))
 ):
-    """Spec §5.1: Admin registers new hardware device, producing provisioning secret."""
+    """Spec §5.1 & Phase 3: Admin registers new hardware device, producing single-use provisioning secret."""
     prov_secret = generate_random_secret()
     device = Device(
         hardware_type=req.hardware_type or "ESP32",
@@ -52,9 +52,9 @@ def register_device(
 
 @router.post("/{device_id}/provision", response_model=DeviceProvisionResponse)
 def provision_device(device_id: str, req: DeviceProvisionRequest, db: Session = Depends(get_db)):
-    """Spec §5.1: One-time exchange of provisioning secret for long-lived device credential."""
+    """Spec §5.1 & Phase 3: Single-use exchange of provisioning secret for long-lived device credential."""
     device = db.query(Device).filter(Device.id == device_id).first()
-    if not device or device.provisioning_secret != req.provisioning_secret:
+    if not device or not device.provisioning_secret or device.provisioning_secret != req.provisioning_secret:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid device_id or provisioning secret")
     
     if device.status == "revoked":
@@ -62,7 +62,7 @@ def provision_device(device_id: str, req: DeviceProvisionRequest, db: Session = 
         
     credential = generate_random_secret()
     device.credential_hash = hash_credential(credential)
-    device.provisioning_secret = None  # Invalidate provisioning secret after single use
+    device.provisioning_secret = None  # Single-use provisioning secret invalidated!
     device.status = "active"
     device.last_seen_at = utc_now()
     db.commit()
@@ -76,13 +76,16 @@ def provision_device(device_id: str, req: DeviceProvisionRequest, db: Session = 
 
 @router.post("/{device_id}/auth", response_model=DeviceAuthResponse)
 def authenticate_device(device_id: str, req: DeviceAuthRequest, db: Session = Depends(get_db)):
-    """Spec §5.1: Device exchanges credential for short-lived access token."""
+    """Spec §5.1 & Phase 3: Device exchanges credential for 1-hour short-lived device access token."""
     device = db.query(Device).filter(Device.id == device_id).first()
     if not device or not device.credential_hash or device.credential_hash != hash_credential(req.device_credential):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid device credential")
         
     if device.status != "active":
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=f"Device status is '{device.status}'")
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Device status is '{device.status}'. Active status required to authenticate."
+        )
         
     device.last_seen_at = utc_now()
     db.commit()
@@ -95,6 +98,61 @@ def authenticate_device(device_id: str, req: DeviceAuthRequest, db: Session = De
     )
 
 
+@router.post("/{device_id}/rotate-credential", response_model=DeviceProvisionResponse)
+def rotate_device_credential(
+    device_id: str,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_role(["admin"]))
+):
+    """Phase 3: Rotate device credential secret for security lifecycle maintenance."""
+    device = db.query(Device).filter(Device.id == device_id).first()
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+    if device.status == "revoked":
+        raise HTTPException(status_code=403, detail="Cannot rotate credentials for revoked device")
+
+    new_credential = generate_random_secret()
+    device.credential_hash = hash_credential(new_credential)
+    db.commit()
+    return DeviceProvisionResponse(
+        device_id=device.id,
+        device_credential=new_credential,
+        status=device.status
+    )
+
+
+@router.post("/{device_id}/disable")
+def disable_device(
+    device_id: str,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_role(["admin"]))
+):
+    """Phase 3: Admin disables device, blocking authentication and ingestion."""
+    device = db.query(Device).filter(Device.id == device_id).first()
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+    device.status = "disabled"
+    db.commit()
+    return {"message": f"Device {device_id} disabled", "status": "disabled"}
+
+
+@router.post("/{device_id}/enable")
+def enable_device(
+    device_id: str,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_role(["admin"]))
+):
+    """Phase 3: Admin enables device."""
+    device = db.query(Device).filter(Device.id == device_id).first()
+    if not device:
+        raise HTTPException(status_code=404, detail="Device not found")
+    if device.status == "revoked":
+        raise HTTPException(status_code=403, detail="Cannot enable permanently revoked device")
+    device.status = "active"
+    db.commit()
+    return {"message": f"Device {device_id} enabled", "status": "active"}
+
+
 @router.post("/{device_id}/reassign", response_model=DeviceResponse)
 def reassign_device_vehicle(
     device_id: str,
@@ -102,12 +160,12 @@ def reassign_device_vehicle(
     db: Session = Depends(get_db),
     admin: User = Depends(require_role(["admin"]))
 ):
-    """Spec §5.3: Reassign device to new vehicle, maintaining historical assignment timestamps."""
+    """Spec §5.3 & Phase 3: Reassign device to new vehicle, preserving historical assignment timestamps."""
     device = db.query(Device).filter(Device.id == device_id).first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
         
-    # Close out previous assignment
+    # Close out previous active assignment (assigned_to = utc_now())
     current_assignment = db.query(DeviceVehicleAssignment).filter(
         DeviceVehicleAssignment.device_id == device.id,
         DeviceVehicleAssignment.assigned_to.is_(None)
@@ -116,7 +174,7 @@ def reassign_device_vehicle(
     if current_assignment:
         current_assignment.assigned_to = utc_now()
         
-    # Create new assignment
+    # Create new assignment record
     new_assignment = DeviceVehicleAssignment(
         device_id=device.id,
         vehicle_id=req.new_vehicle_id,
@@ -135,14 +193,14 @@ def revoke_device(
     db: Session = Depends(get_db),
     admin: User = Depends(require_role(["admin"]))
 ):
-    """Spec §5.2: Revoke device credential immediately."""
+    """Spec §5.2 & Phase 3: Permanently revoke device credential."""
     device = db.query(Device).filter(Device.id == device_id).first()
     if not device:
         raise HTTPException(status_code=404, detail="Device not found")
     device.status = "revoked"
     device.credential_hash = None
     db.commit()
-    return {"message": f"Device {device_id} successfully revoked"}
+    return {"message": f"Device {device_id} successfully revoked", "status": "revoked"}
 
 
 @router.get("", response_model=List[DeviceResponse])
