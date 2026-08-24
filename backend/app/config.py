@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     MEDIA_UPLOAD_DIR: str = os.path.join(os.path.dirname(__file__), "..", "uploads")
     DEFAULT_MEDIA_RETENTION_DAYS: int = 90
     
+    # Google Maps API Integration
+    GOOGLE_MAPS_API_KEY: str = "AIzaSyBJVFpSHvA5O9U0UutJK6Vusx3UJ2Ez7-k"
+    
     # Raw Threshold Classification Parameters (ESP32 Baseline)
     IMU_ACCEL_THRESHOLD_HIGH: float = 18.0  # m/s^2 z-axis spike -> High Severity
     IMU_ACCEL_THRESHOLD_MED: float = 14.0   # m/s^2 z-axis spike -> Med Severity

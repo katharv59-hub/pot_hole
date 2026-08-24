@@ -6,7 +6,7 @@ import { InteractiveMap } from '../Map/InteractiveMap';
 import { useConfig } from '../../context/ConfigContext';
 import {
   AlertTriangle, Navigation, PlusCircle, History, ShieldCheck, MapPin,
-  Camera, CheckCircle2, ChevronRight, X, Volume2
+  CheckCircle2, X
 } from 'lucide-react';
 
 export const DriverDashboard: React.FC = () => {
@@ -22,19 +22,19 @@ export const DriverDashboard: React.FC = () => {
   const [reportDesc, setReportDesc] = useState('');
   const [submittingReport, setSubmittingReport] = useState(false);
 
-  // Route Risk Checker State
+  // Google Maps Directions Search State
+  const [originInput, setOriginInput] = useState('Bandra West, Mumbai');
+  const [destInput, setDestInput] = useState('Andheri East, Mumbai');
   const [routePolyline, setRoutePolyline] = useState<[number, number][]>([]);
   const [routeSafetyResult, setRouteSafetyResult] = useState<RouteSafetyResponse | null>(null);
   const [checkingRoute, setCheckingRoute] = useState(false);
 
   const { getSeverityColor, getSeverityLabel, getEventTypeLabel } = useConfig();
 
-  // Load initial events & user reports
   useEffect(() => {
     fetchRoadEvents().then(setEvents).catch(console.error);
     fetchMyReports().then(setMyReports).catch(console.error);
 
-    // WebSocket listener for live hazard updates
     const unsubscribe = wsClient.addListener((type, data) => {
       if (type === 'event_created') {
         setEvents((prev) => [data as RoadEvent, ...prev]);
@@ -49,18 +49,14 @@ export const DriverDashboard: React.FC = () => {
     return () => unsubscribe();
   }, []);
 
-  // Handle spatial bounding box updates from Map
   const handleBboxChange = (bbox: [number, number, number, number]) => {
     wsClient.subscribeBbox(bbox);
     fetchRoadEvents(bbox.join(',')).then(setEvents).catch(console.error);
   };
 
-  // Proximity Alert Trigger Simulation
   const checkProximityAlert = (newEvent: RoadEvent) => {
-    // Current simulated driver coordinates: Mumbai Junction
     const driverLat = 19.0750;
     const driverLon = 72.8800;
-
     const latDiff = Math.abs(newEvent.latitude - driverLat);
     const lonDiff = Math.abs(newEvent.longitude - driverLon);
 
@@ -72,7 +68,6 @@ export const DriverDashboard: React.FC = () => {
     }
   };
 
-  // Handle Manual Report Submit
   const handleReportSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmittingReport(true);
@@ -93,24 +88,32 @@ export const DriverDashboard: React.FC = () => {
     }
   };
 
-  // Run Route Risk Checker Simulation
-  const handleRunRouteCheck = async () => {
+  // Google Maps Directions Route Safety Check
+  const handleRunRouteCheck = async (e: React.FormEvent) => {
+    e.preventDefault();
     setCheckingRoute(true);
-    // Sample Route Polyline across Mumbai Bandra-Kurla Corridor
-    const samplePoly: [number, number][] = [
+
+    const fallbackSamplePoly: [number, number][] = [
       [19.0600, 72.8700],
       [19.0728, 72.8826],
       [19.0815, 72.8890],
       [19.0950, 72.8710],
       [19.1100, 72.8500],
     ];
-    setRoutePolyline(samplePoly);
 
     try {
-      const res = await checkRouteSafety(samplePoly);
+      const res = await checkRouteSafety(fallbackSamplePoly, originInput, destInput);
       setRouteSafetyResult(res);
+      if (res.segment_scores && res.segment_scores.length > 0) {
+        const polyPts = res.segment_scores.map((s) => s.start_point);
+        polyPts.push(res.segment_scores[res.segment_scores.length - 1].end_point);
+        setRoutePolyline(polyPts);
+      } else {
+        setRoutePolyline(fallbackSamplePoly);
+      }
     } catch (err) {
       console.error('Route safety check failed:', err);
+      setRoutePolyline(fallbackSamplePoly);
     } finally {
       setCheckingRoute(false);
     }
@@ -174,7 +177,7 @@ export const DriverDashboard: React.FC = () => {
             }}
           >
             <ShieldCheck size={16} />
-            Route Risk
+            Google Route Risk
           </button>
           <button
             onClick={() => setActiveTab('reports')}
@@ -195,7 +198,7 @@ export const DriverDashboard: React.FC = () => {
             }}
           >
             <History size={16} />
-            My Reports ({myReports.length})
+            Reports ({myReports.length})
           </button>
         </div>
 
@@ -204,7 +207,7 @@ export const DriverDashboard: React.FC = () => {
           {activeTab === 'map' && (
             <div>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-                <h4 style={{ fontSize: '14px', color: '#ffffff' }}>Nearby Detected Hazards ({events.length})</h4>
+                <h4 style={{ fontSize: '14px', color: '#ffffff' }}>Nearby Hazards ({events.length})</h4>
                 <button
                   onClick={() => setShowReportModal(true)}
                   style={{
@@ -226,7 +229,6 @@ export const DriverDashboard: React.FC = () => {
                 </button>
               </div>
 
-              {/* Hazard List Cards */}
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 {events.map((evt) => {
                   const color = getSeverityColor(evt.severity);
@@ -262,29 +264,53 @@ export const DriverDashboard: React.FC = () => {
 
           {activeTab === 'route' && (
             <div>
-              <h4 style={{ fontSize: '14px', marginBottom: '8px' }}>Route Safety Risk Checker</h4>
+              <h4 style={{ fontSize: '14px', marginBottom: '8px' }}>Google Maps Route Safety Checker</h4>
               <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '16px' }}>
-                Annotates segment risk along your trip without forcing alternate routing.
+                Annotates driving route polyline using Google Maps Directions API & spatial hazard intelligence.
               </p>
 
-              <button
-                onClick={handleRunRouteCheck}
-                disabled={checkingRoute}
-                style={{
-                  width: '100%',
-                  padding: '10px',
-                  borderRadius: '8px',
-                  border: 'none',
-                  background: 'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)',
-                  color: '#fff',
-                  fontWeight: 600,
-                  fontSize: '13px',
-                  cursor: 'pointer',
-                  marginBottom: '16px',
-                }}
-              >
-                {checkingRoute ? 'Analyzing Route Safety...' : 'Analyze Planned Route'}
-              </button>
+              <form onSubmit={handleRunRouteCheck} style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '16px' }}>
+                <div>
+                  <label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '2px' }}>Origin Location</label>
+                  <input
+                    type="text"
+                    value={originInput}
+                    onChange={(e) => setOriginInput(e.target.value)}
+                    placeholder="e.g. Bandra West, Mumbai"
+                    style={{ width: '100%', padding: '8px', borderRadius: '6px', background: '#1f2937', border: '1px solid var(--border-color)', color: '#fff', fontSize: '12px' }}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '2px' }}>Destination Location</label>
+                  <input
+                    type="text"
+                    value={destInput}
+                    onChange={(e) => setDestInput(e.target.value)}
+                    placeholder="e.g. Andheri East, Mumbai"
+                    style={{ width: '100%', padding: '8px', borderRadius: '6px', background: '#1f2937', border: '1px solid var(--border-color)', color: '#fff', fontSize: '12px' }}
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={checkingRoute}
+                  style={{
+                    width: '100%',
+                    padding: '10px',
+                    borderRadius: '8px',
+                    border: 'none',
+                    background: 'linear-gradient(135deg, #6366f1 0%, #a855f7 100%)',
+                    color: '#fff',
+                    fontWeight: 600,
+                    fontSize: '13px',
+                    cursor: 'pointer',
+                    marginTop: '4px',
+                  }}
+                >
+                  {checkingRoute ? 'Querying Google Directions & Safety...' : 'Analyze Google Maps Driving Route'}
+                </button>
+              </form>
 
               {routeSafetyResult && (
                 <div className="glass-panel" style={{ padding: '16px' }}>
@@ -303,11 +329,11 @@ export const DriverDashboard: React.FC = () => {
 
                   <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '12px' }}>
                     <div>Hazards on Route: <b>{routeSafetyResult.detected_hazards_on_route.length}</b></div>
-                    <div>Unscored Stretches: <b>{routeSafetyResult.unscored_stretches_count}</b></div>
+                    <div>Scored Segments: <b>{routeSafetyResult.scored_segments_count}</b></div>
                   </div>
 
-                  <div style={{ fontSize: '10px', padding: '6px', borderRadius: '4px', background: 'rgba(255,255,255,0.05)', color: '#9ca3af' }}>
-                    ⚠️ Note: Unscored stretches are framed as Location Intelligence per Spec §10.
+                  <div style={{ fontSize: '10px', padding: '6px', borderRadius: '4px', background: 'rgba(99, 102, 241, 0.15)', color: '#a5b4fc', border: '1px solid rgba(99, 102, 241, 0.3)' }}>
+                    🗺️ Google Maps Driving Route Active
                   </div>
                 </div>
               )}

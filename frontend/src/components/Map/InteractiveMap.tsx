@@ -1,8 +1,8 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import { RoadEvent } from '../../types';
 import { useConfig } from '../../context/ConfigContext';
-import { ShieldAlert, AlertTriangle, CheckCircle, Info } from 'lucide-react';
+import { Layers } from 'lucide-react';
 
 interface InteractiveMapProps {
   events: RoadEvent[];
@@ -20,20 +20,28 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
   onSelectEvent,
   onBboxChange,
   routePolyline,
-  center = [19.0760, 72.8777], // Default to Mumbai Metropolitan region
+  center = [19.0760, 72.8777], // Mumbai Metropolitan region
   zoom = 13,
 }) => {
   const mapRef = useRef<L.Map | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const tileLayerRef = useRef<L.TileLayer | null>(null);
   const markersLayerRef = useRef<L.LayerGroup | null>(null);
   const polylineLayerRef = useRef<L.Polyline | null>(null);
 
+  const [mapStyle, setMapStyle] = useState<'google_hybrid' | 'google_roadmap' | 'carto_dark'>('google_hybrid');
   const { getSeverityColor, getSeverityLabel, getEventTypeLabel } = useConfig();
+
+  // Map Tile Configurations
+  const TILE_URLS = {
+    google_hybrid: 'https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',
+    google_roadmap: 'https://mt1.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',
+    carto_dark: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
+  };
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
 
-    // Initialize Leaflet Map
     const map = L.map(containerRef.current, {
       center: center,
       zoom: zoom,
@@ -42,17 +50,16 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
 
     L.control.zoom({ position: 'bottomright' }).addTo(map);
 
-    // Dark Map Tile Layer (CartoDB Dark Matter)
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-      attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
-      subdomains: 'abcd',
-      maxZoom: 19,
+    // Initial Google Maps Tile Layer
+    const tileLayer = L.tileLayer(TILE_URLS.google_hybrid, {
+      attribution: '&copy; Google Maps Infrastructure',
+      maxZoom: 20,
     }).addTo(map);
 
+    tileLayerRef.current = tileLayer;
     markersLayerRef.current = L.layerGroup().addTo(map);
     mapRef.current = map;
 
-    // Listen to Map Move / Zoom events and emit bounding box [minLon, minLat, maxLon, maxLat]
     const emitBbox = () => {
       if (!map || !onBboxChange) return;
       const bounds = map.getBounds();
@@ -67,13 +74,30 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
 
     map.on('moveend', emitBbox);
     map.on('zoomend', emitBbox);
-    emitBbox(); // Initial emission
+    emitBbox();
 
     return () => {
       map.remove();
       mapRef.current = null;
     };
   }, []);
+
+  // Update Tile Layer when user toggles style
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+
+    if (tileLayerRef.current) {
+      map.removeLayer(tileLayerRef.current);
+    }
+
+    const newTileLayer = L.tileLayer(TILE_URLS[mapStyle], {
+      attribution: mapStyle.startsWith('google') ? '&copy; Google Maps' : '&copy; CARTO',
+      maxZoom: 20,
+    }).addTo(map);
+
+    tileLayerRef.current = newTileLayer;
+  }, [mapStyle]);
 
   // Update Hazard Markers on Map
   useEffect(() => {
@@ -88,7 +112,6 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
       const isSelected = selectedEventId === evt.id;
       const isCritical = evt.severity >= 0.8;
 
-      // Custom HTML Marker Element
       const customIcon = L.divIcon({
         className: 'custom-hazard-icon',
         html: `
@@ -118,9 +141,8 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
 
       const marker = L.marker([evt.latitude, evt.longitude], { icon: customIcon });
 
-      // Interactive Popup Content
       const popupHtml = `
-        <div style="padding: 8px; min-width: 200px;">
+        <div style="padding: 8px; min-width: 220px;">
           <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
             <span style="font-weight: 700; font-size: 14px; color: #ffffff;">${getEventTypeLabel(evt.event_type)}</span>
             <span style="
@@ -149,7 +171,7 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
             color: #9ca3af;
             border: 1px dashed rgba(255,255,255,0.15);
           ">
-            📍 Framing: Location Intelligence (Unscored Segment)
+            🗺️ Google Maps Precision Coordinates
           </div>
         </div>
       `;
@@ -179,7 +201,6 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
         color: '#6366f1',
         weight: 6,
         opacity: 0.85,
-        dashArray: '10, 10',
       }).addTo(map);
 
       polylineLayerRef.current = polyline;
@@ -190,6 +211,67 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%', borderRadius: '12px', overflow: 'hidden' }}>
       <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
+
+      {/* Map Tile Layer Switcher Control */}
+      <div
+        className="glass-panel"
+        style={{
+          position: 'absolute',
+          top: '20px',
+          right: '20px',
+          zIndex: 1000,
+          padding: '6px',
+          borderRadius: '10px',
+          display: 'flex',
+          gap: '4px',
+        }}
+      >
+        <button
+          onClick={() => setMapStyle('google_hybrid')}
+          style={{
+            padding: '6px 12px',
+            borderRadius: '6px',
+            border: 'none',
+            background: mapStyle === 'google_hybrid' ? '#6366f1' : 'transparent',
+            color: mapStyle === 'google_hybrid' ? '#fff' : 'var(--text-secondary)',
+            fontWeight: 600,
+            fontSize: '11px',
+            cursor: 'pointer',
+          }}
+        >
+          Google Hybrid
+        </button>
+        <button
+          onClick={() => setMapStyle('google_roadmap')}
+          style={{
+            padding: '6px 12px',
+            borderRadius: '6px',
+            border: 'none',
+            background: mapStyle === 'google_roadmap' ? '#6366f1' : 'transparent',
+            color: mapStyle === 'google_roadmap' ? '#fff' : 'var(--text-secondary)',
+            fontWeight: 600,
+            fontSize: '11px',
+            cursor: 'pointer',
+          }}
+        >
+          Google Roadmap
+        </button>
+        <button
+          onClick={() => setMapStyle('carto_dark')}
+          style={{
+            padding: '6px 12px',
+            borderRadius: '6px',
+            border: 'none',
+            background: mapStyle === 'carto_dark' ? '#6366f1' : 'transparent',
+            color: mapStyle === 'carto_dark' ? '#fff' : 'var(--text-secondary)',
+            fontWeight: 600,
+            fontSize: '11px',
+            cursor: 'pointer',
+          }}
+        >
+          Dark Mode
+        </button>
+      </div>
 
       {/* Map Floating Legend */}
       <div

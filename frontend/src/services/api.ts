@@ -86,8 +86,15 @@ export const reassignDevice = async (deviceId: string, newVehicleId: string) => 
   return res.data;
 };
 
-export const checkRouteSafety = async (polyline: [number, number][]): Promise<RouteSafetyResponse> => {
-  const res = await api.post<RouteSafetyResponse>('/routes/safety', { polyline });
+export const checkRouteSafety = async (
+  polyline?: [number, number][],
+  origin?: string,
+  destination?: string
+): Promise<RouteSafetyResponse> => {
+  const params: Record<string, string> = {};
+  if (origin) params.origin = origin;
+  if (destination) params.destination = destination;
+  const res = await api.post<RouteSafetyResponse>('/routes/safety', { polyline: polyline || [] }, { params });
   return res.data;
 };
 
