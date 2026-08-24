@@ -29,7 +29,7 @@ def encode_geohash(latitude: float, longitude: float, precision: int = 6) -> str
             mid = (lat_interval[0] + lat_interval[1]) / 2
             if latitude >= mid:
                 ch |= bits[bit]
-                lat_interval = (lat_interval[0], mid)
+                lat_interval = (mid, lat_interval[1])
             else:
                 lat_interval = (lat_interval[0], mid)
         
@@ -68,17 +68,21 @@ def map_severity_to_label(severity_val: float) -> str:
         return "low"
 
 
-def classify_raw_imu_sensor_data(sensor_data: Dict[str, Any]) -> Tuple[str, float, float]:
+def classify_raw_imu_sensor_data(sensor_data: Dict[str, Any]) -> Optional[Tuple[str, float, float]]:
     """
     Spec §0 Binding Constraint #3 & §2 Raw Mode classification:
     Evaluates IMU window data for acceleration spikes to produce event_type, confidence, severity.
+    Returns None if max acceleration is below minimum detection threshold (11.5 m/s²).
     """
     if not sensor_data:
-        return ("pothole", 0.75, 0.50)
+        return None
     
     imu_window = sensor_data.get("imu_window", {})
-    z_accel_samples = imu_window.get("z_accel", [9.8, 15.2, 18.5, 9.8])
-    max_accel = max([abs(x) for x in z_accel_samples]) if z_accel_samples else 14.0
+    z_accel_samples = imu_window.get("z_accel", [])
+    if not z_accel_samples:
+        return None
+
+    max_accel = max([abs(x) for x in z_accel_samples])
 
     if max_accel >= settings.IMU_ACCEL_THRESHOLD_HIGH:
         return ("pothole", 0.88, 0.85)  # Critical severity
@@ -87,7 +91,8 @@ def classify_raw_imu_sensor_data(sensor_data: Dict[str, Any]) -> Tuple[str, floa
     elif max_accel >= settings.IMU_ACCEL_THRESHOLD_LOW:
         return ("speed_breaker", 0.72, 0.35)  # Medium severity
     else:
-        return ("pothole", 0.65, 0.25)  # Low severity
+        # Explicit no-event / insufficient-evidence signal (Fix #3)
+        return None
 
 
 def check_event_idempotency(db: Session, device_id: str, device_event_id: str) -> Optional[RoadEvent]:

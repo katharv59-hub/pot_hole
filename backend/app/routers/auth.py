@@ -10,6 +10,11 @@ router = APIRouter(prefix="/auth", tags=["User Authentication"])
 
 @router.post("/register", response_model=TokenResponse)
 def register_user(user_in: UserCreate, db: Session = Depends(get_db)):
+    """
+    Public registration endpoint.
+    Fix #5: Public registration creates a normal 'driver' account by default.
+    Privileged roles ('admin', 'authority') cannot be assigned via public registration.
+    """
     existing = db.query(User).filter(User.email == user_in.email).first()
     if existing:
         raise HTTPException(
@@ -18,11 +23,12 @@ def register_user(user_in: UserCreate, db: Session = Depends(get_db)):
         )
     
     hashed_pwd = get_password_hash(user_in.password)
+    # Hardcode role to "driver" for public registrations to prevent escalation
     user = User(
         email=user_in.email,
         hashed_password=hashed_pwd,
         name=user_in.name,
-        role=user_in.role or "driver"
+        role="driver" # Forced driver role
     )
     db.add(user)
     db.commit()

@@ -2,18 +2,13 @@ import pytest
 from datetime import datetime, timezone
 from fastapi.testclient import TestClient
 from app.main import app
+from tests.conftest import create_test_admin_token
 
 client = TestClient(app)
 
 def test_raw_event_ingestion_and_idempotency():
-    # 1. Setup Device & Vehicle via Admin API
-    admin_reg = client.post("/api/v1/auth/register", json={
-        "email": "ingest_admin@example.com",
-        "password": "adminpassword123",
-        "name": "Ingest Admin",
-        "role": "admin"
-    })
-    admin_token = admin_reg.json()["access_token"]
+    # 1. Setup Device & Vehicle via Admin
+    admin_token = create_test_admin_token("ingest_admin@roadsentinel.io")
     admin_headers = {"Authorization": f"Bearer {admin_token}"}
 
     dev_reg = client.post("/api/v1/devices/register", json={
@@ -67,13 +62,7 @@ def test_raw_event_ingestion_and_idempotency():
 
 def test_vehicle_assignment_mismatch_rejection():
     # Attempt to post event with vehicle_id not assigned to device -> Expect 409
-    admin_reg = client.post("/api/v1/auth/register", json={
-        "email": "mismatch_admin@example.com",
-        "password": "adminpassword123",
-        "name": "Mismatch Admin",
-        "role": "admin"
-    })
-    admin_token = admin_reg.json()["access_token"]
+    admin_token = create_test_admin_token("mismatch_admin@roadsentinel.io")
     admin_headers = {"Authorization": f"Bearer {admin_token}"}
 
     dev_reg = client.post("/api/v1/devices/register", json={

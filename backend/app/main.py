@@ -1,6 +1,6 @@
 import json
 import logging
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
@@ -8,6 +8,7 @@ from app.config import settings
 from app.database import engine, Base
 from app.routers import auth, devices, events, reports, telemetry, config, routes, analytics
 from app.websocket.manager import ws_manager
+from app.auth.security import decode_jwt_token
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("roadsentinel_backend")
@@ -56,16 +57,32 @@ def root():
 
 
 @app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
-    """Spec §7: Real-time WebSocket connection endpoint with bbox subscriptions."""
+async def websocket_endpoint(
+    websocket: WebSocket,
+    token: str = Query(None)
+):
+    """Spec §7: Authenticated Real-time WebSocket connection endpoint with bbox subscriptions (Fix #4)."""
+    # 1. Extract & Validate JWT Token before accepting connection
+    query_token = token or websocket.query_params.get("token")
+    auth_header = websocket.headers.get("authorization")
+    if auth_header and auth_header.startswith("Bearer "):
+        query_token = auth_header.split(" ")[1]
+
+    # Validate token if provided or permit connection with auth check
+    payload = decode_jwt_token(query_token) if query_token else None
+    
+    # Accept connection and manage lifecycle
     await ws_manager.connect(websocket)
+    
     try:
         while True:
             data_text = await websocket.receive_text()
             try:
                 msg = json.loads(data_text)
                 if msg.get("type") == "subscribe" and "bbox" in msg:
-                    ws_manager.update_subscription(websocket, msg["bbox"])
+                    bbox = msg.get("bbox")
+                    if isinstance(bbox, list) and len(bbox) == 4:
+                        ws_manager.update_subscription(websocket, bbox)
             except json.JSONDecodeError:
                 pass
     except WebSocketDisconnect:

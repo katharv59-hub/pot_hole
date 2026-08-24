@@ -6,6 +6,8 @@ from fastapi.testclient import TestClient
 
 from app.database import Base, get_db
 from app.main import app
+from app.models.domain import User
+from app.auth.security import get_password_hash, create_access_token
 
 TEST_DB_FILE = "./test_roadsentinel.db"
 SQLALCHEMY_TEST_DATABASE_URL = f"sqlite:///{TEST_DB_FILE}"
@@ -40,3 +42,20 @@ app.dependency_overrides[get_db] = override_get_db
 @pytest.fixture
 def client():
     return TestClient(app)
+
+def create_test_admin_token(email: str = "testadmin@roadsentinel.io") -> str:
+    db = TestingSessionLocal()
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        user = User(
+            email=email,
+            hashed_password=get_password_hash("adminpassword123"),
+            name="Test Admin",
+            role="admin"
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+    token = create_access_token(subject=user.id, role="admin")
+    db.close()
+    return token

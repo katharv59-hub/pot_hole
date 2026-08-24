@@ -1,6 +1,7 @@
 import pytest
 from fastapi.testclient import TestClient
 from app.main import app
+from tests.conftest import create_test_admin_token
 
 client = TestClient(app)
 
@@ -8,12 +9,11 @@ def test_user_register_and_login():
     email = "testdriver@example.com"
     password = "securepassword123"
     
-    # 1. Register
+    # 1. Register (Public registration forces role='driver' per Fix #5)
     reg_resp = client.post("/api/v1/auth/register", json={
         "email": email,
         "password": password,
-        "name": "Test Driver",
-        "role": "driver"
+        "name": "Test Driver"
     })
     assert reg_resp.status_code == 200, reg_resp.text
     data = reg_resp.json()
@@ -32,14 +32,8 @@ def test_user_register_and_login():
 
 
 def test_device_provisioning_flow():
-    # Admin Login / Token (using seeded admin or registering admin)
-    admin_reg = client.post("/api/v1/auth/register", json={
-        "email": "testadmin_flow@example.com",
-        "password": "adminpassword123",
-        "name": "Flow Admin",
-        "role": "admin"
-    })
-    admin_token = admin_reg.json()["access_token"]
+    # Admin Token (created directly in test database session per Fix #5)
+    admin_token = create_test_admin_token("admin_flow@roadsentinel.io")
     headers = {"Authorization": f"Bearer {admin_token}"}
 
     # 1. Register Device

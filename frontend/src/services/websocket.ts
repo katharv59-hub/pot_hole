@@ -2,7 +2,7 @@ type EventCallback = (type: string, data: any) => void;
 
 class WebSocketClient {
   private socket: WebSocket | null = null;
-  private url = 'ws://localhost:8000/ws';
+  private url = import.meta.env.VITE_WS_URL || 'ws://localhost:8000/ws';
   private currentBbox: [number, number, number, number] | null = null;
   private listeners: EventCallback[] = [];
   private isConnected = false;

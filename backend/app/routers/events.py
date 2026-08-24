@@ -21,9 +21,9 @@ from app.services.event_service import (
 from app.websocket.manager import ws_manager
 from app.config import settings
 
-router = APIRouter(prefix="/events", tags=["Road Events Ingestion & Management"])
+router = APIRouter(tags=["Road Events Ingestion & Management"])
 
-@router.post("", response_model=EventIngestionResponse)
+@router.post("/events", response_model=EventIngestionResponse)
 async def ingest_road_event(
     req: EventIngestionRequest,
     db: Session = Depends(get_db),
@@ -32,12 +32,20 @@ async def ingest_road_event(
     device, assigned_vehicle_id = device_context
     warnings = []
     
-    # 1. Cross-check payload vehicle_id against authenticated device assignment (Spec §4.4, §5.4)
-    if assigned_vehicle_id and req.vehicle_id != assigned_vehicle_id:
+    # 1. Authoritative Vehicle Identity check (Fix #7, Spec §4.4, §5.4)
+    if not assigned_vehicle_id:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"Vehicle ID '{req.vehicle_id}' in payload does not match device's active assignment '{assigned_vehicle_id}'"
+            detail=f"Device '{device.id}' has no active vehicle assignment in database. Ingestion rejected."
         )
+
+    if req.vehicle_id and req.vehicle_id != assigned_vehicle_id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Vehicle ID '{req.vehicle_id}' in payload does not match device's authoritative assignment '{assigned_vehicle_id}'"
+        )
+        
+    effective_vehicle_id = assigned_vehicle_id
 
     # 2. Check Idempotency (device_id, device_event_id) (Spec §8)
     existing_dup = check_event_idempotency(db, device.id, req.device_event_id)
@@ -59,9 +67,21 @@ async def ingest_road_event(
     if skew_seconds > 300: # > 5 minutes
         warnings.append(f"Device timestamp has high clock skew ({int(skew_seconds)}s difference from server).")
 
-    # 4. Raw mode vs Pre-classified mode classification (Spec §0 Constraint #3)
+    # 4. Raw mode vs Pre-classified mode classification (Fix #3, Spec §0 Constraint #3)
     if not req.event_type or req.confidence is None or req.severity is None:
-        event_type, confidence, severity = classify_raw_imu_sensor_data(req.sensor_data or {})
+        res = classify_raw_imu_sensor_data(req.sensor_data or {})
+        if res is None:
+            # Below detection threshold (11.5 m/s²) -> Explicit no-event outcome
+            return EventIngestionResponse(
+                event_id="none",
+                device_event_id=req.device_event_id,
+                status="rejected",
+                duplicate_of=None,
+                server_timestamp=utc_now(),
+                corroboration_count=0,
+                warnings=["Sensor acceleration below minimum detection threshold (11.5 m/s²). No hazard event created."]
+            )
+        event_type, confidence, severity = res
     else:
         event_type = req.event_type
         confidence = req.confidence
@@ -69,22 +89,34 @@ async def ingest_road_event(
 
     severity_label = map_severity_to_label(severity)
 
-    # 5. Corroboration & Deduplication across independent devices (Spec §8)
+    # 5. Corroboration & Deduplication across independent devices (Fix #2, Spec §8)
     matching_event, corroboration_count = process_event_corroboration_and_dedup(
         db=db,
         new_device_id=device.id,
-        new_vehicle_id=req.vehicle_id,
+        new_vehicle_id=effective_vehicle_id,
         latitude=req.location.latitude,
         longitude=req.location.longitude,
         device_timestamp=req.device_timestamp,
         event_type=event_type
     )
 
-    # 6. Create RoadEvent entity
+    if matching_event:
+        # Existing canonical event identified -> Do NOT create a duplicate canonical RoadEvent row!
+        return EventIngestionResponse(
+            event_id=matching_event.id,
+            device_event_id=req.device_event_id,
+            status="accepted",
+            duplicate_of=matching_event.id if matching_event.device_id != device.id else None,
+            server_timestamp=matching_event.server_timestamp,
+            corroboration_count=corroboration_count,
+            warnings=["Corroborated existing canonical event. Duplicate row creation skipped."]
+        )
+
+    # 6. Create new canonical RoadEvent entity
     event = RoadEvent(
         device_event_id=req.device_event_id,
         device_id=device.id,
-        vehicle_id=req.vehicle_id,
+        vehicle_id=effective_vehicle_id,
         device_timestamp=req.device_timestamp,
         server_timestamp=utc_now(),
         latitude=req.location.latitude,
@@ -135,7 +167,7 @@ async def ingest_road_event(
     )
 
 
-@router.get("", response_model=List[RoadEventResponse])
+@router.get("/events", response_model=List[RoadEventResponse])
 def get_road_events(
     bbox: Optional[str] = Query(None, description="minLon,minLat,maxLon,maxLat"),
     event_type: Optional[str] = None,
@@ -171,7 +203,9 @@ def get_road_events(
     return events
 
 
-@router.patch("/admin/{event_id}/status", response_model=RoadEventResponse)
+# Exact endpoint matching frontend-spec §5.1 & backend-spec §6 (Fix #9)
+@router.patch("/admin/events/{event_id}/status", response_model=RoadEventResponse)
+@router.patch("/events/admin/{event_id}/status", response_model=RoadEventResponse)
 async def update_event_status(
     event_id: str,
     patch: EventStatusPatch,
@@ -192,7 +226,7 @@ async def update_event_status(
     return event
 
 
-@router.post("/{event_id}/media/upload-url", response_model=UploadUrlResponse)
+@router.post("/events/{event_id}/media/upload-url", response_model=UploadUrlResponse)
 def get_event_media_upload_url(
     event_id: str,
     db: Session = Depends(get_db)
@@ -207,7 +241,7 @@ def get_event_media_upload_url(
     return UploadUrlResponse(media_id=media_id, upload_url=upload_url)
 
 
-@router.post("/{event_id}/media/{media_id}/confirm", response_model=MediaAssetResponse)
+@router.post("/events/{event_id}/media/{media_id}/confirm", response_model=MediaAssetResponse)
 def confirm_event_media(
     event_id: str,
     media_id: str,
