@@ -259,8 +259,9 @@ class RouteSafetyRequest(BaseModel):
     polyline: List[List[float]] # [[lat, lon], ...]
 
 class RouteSafetyResponse(BaseModel):
-    overall_safety_score: float # 0 - 100
+    overall_safety_score: Optional[float] = None  # null when no official road segments mapped
     scored_segments_count: int
     unscored_stretches_count: int
     detected_hazards_on_route: List[RoadEventResponse]
     segment_scores: List[Dict[str, Any]]
+    scoring_available: bool = False  # True only when official RoadSegment mapping exists

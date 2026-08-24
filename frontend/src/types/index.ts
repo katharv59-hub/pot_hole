@@ -126,16 +126,19 @@ export interface AnalyticsSummary {
 }
 
 export interface RouteSafetyResponse {
-  overall_safety_score: number;
+  overall_safety_score: number | null;
   scored_segments_count: number;
   unscored_stretches_count: number;
   detected_hazards_on_route: RoadEvent[];
+  scoring_available?: boolean;
   segment_scores: Array<{
-    segment_index: number;
+    stretch_index?: number;
+    segment_index?: number;
     start_point: [number, number];
     end_point: [number, number];
     is_road_network_scored: boolean;
     framing_label: string;
-    local_safety_score: number;
+    hazard_density_penalty?: number;
+    local_safety_score?: number;
   }>;
 }

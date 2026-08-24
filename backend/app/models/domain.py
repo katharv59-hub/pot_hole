@@ -1,6 +1,7 @@
 import uuid
+import os
 from datetime import datetime, timezone
-from sqlalchemy import Column, String, Float, Integer, DateTime, ForeignKey, Text, JSON, Boolean, UniqueConstraint
+from sqlalchemy import Column, String, Float, Integer, DateTime, ForeignKey, Text, JSON, Boolean, UniqueConstraint, Index
 from sqlalchemy.orm import relationship
 from app.database import Base
 
@@ -149,14 +150,27 @@ class MLPrediction(Base):
     event = relationship("RoadEvent", back_populates="ml_predictions")
 
 
+# Use PostGIS geometry type for RoadSegment when GeoAlchemy2 is available.
+# Falls back to JSON only in isolated test environments without PostGIS.
+try:
+    from geoalchemy2 import Geometry as PostGISGeometry
+    _GEOMETRY_TYPE = PostGISGeometry('LINESTRING', srid=4326)
+except ImportError:
+    _GEOMETRY_TYPE = JSON  # Test-only fallback
+
+
 class RoadSegment(Base):
     __tablename__ = "road_segments"
     
     id = Column(String, primary_key=True, default=lambda: generate_uuid("seg"))
     road_network_ref = Column(String, nullable=True) # OSM way ID or external ref
-    geometry = Column(JSON, nullable=False) # GeoJSON polyline array [[lat, lon], ...]
+    geometry = Column(_GEOMETRY_TYPE, nullable=True)  # PostGIS LINESTRING(4326) with GiST index
     safety_score = Column(Float, nullable=False, default=100.0) # 0 - 100
     last_updated = Column(DateTime, default=utc_now)
+
+    __table_args__ = (
+        Index('ix_road_segments_geometry_gist', 'geometry', postgresql_using='gist'),
+    ) if _GEOMETRY_TYPE is not JSON else ()
 
 
 class GeoIndexBucket(Base):

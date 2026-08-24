@@ -123,10 +123,13 @@ async def get_route_safety(
 
     hazards_response = [RoadEventResponse.model_validate(h) for h in matched_hazards]
 
+    # No official RoadSegment mapping exists → overall_safety_score is null.
+    # Hazard density penalty is still available per-stretch for informational purposes.
     return RouteSafetyResponse(
-        overall_safety_score=overall_score,
-        scored_segments_count=0, # 0 fabricated official segments per Phase 8
+        overall_safety_score=None,
+        scored_segments_count=0,
         unscored_stretches_count=len(polyline) - 1,
         detected_hazards_on_route=hazards_response,
-        segment_scores=segment_stretches
+        segment_scores=segment_stretches,
+        scoring_available=False
     )

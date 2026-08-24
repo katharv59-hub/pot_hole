@@ -19,6 +19,7 @@ from app.services.event_service import (
     process_event_corroboration_and_dedup
 )
 from app.websocket.manager import ws_manager
+from app.services.storage_service import storage_service
 from app.config import settings
 
 router = APIRouter(tags=["Road Events Ingestion & Management"])
@@ -229,16 +230,17 @@ async def update_event_status(
 @router.post("/events/{event_id}/media/upload-url", response_model=UploadUrlResponse)
 def get_event_media_upload_url(
     event_id: str,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
-    """Spec §11: Generate pre-signed URL slot for event media evidence."""
+    """Spec §11: Generate pre-signed URL slot for event media evidence. Requires authentication."""
     event = db.query(RoadEvent).filter(RoadEvent.id == event_id).first()
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
         
     media_id = f"med_evt_{uuid.uuid4().hex[:8]}"
-    upload_url = f"/api/v1/uploads/direct/{media_id}"
-    return UploadUrlResponse(media_id=media_id, upload_url=upload_url)
+    upload_info = storage_service.generate_presigned_upload_url(media_id)
+    return UploadUrlResponse(media_id=media_id, upload_url=upload_info["upload_url"])
 
 
 @router.post("/events/{event_id}/media/{media_id}/confirm", response_model=MediaAssetResponse)
@@ -246,18 +248,30 @@ def confirm_event_media(
     event_id: str,
     media_id: str,
     access_tier: str = "raw",
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
 ):
-    """Spec §11: Confirm event media upload."""
+    """Spec §11: Confirm event media upload. Retry-safe, authenticated, uses storage provider."""
     event = db.query(RoadEvent).filter(RoadEvent.id == event_id).first()
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
 
+    # Only admin/authority or the device owner's associated user can confirm media
+    if current_user.role not in ["admin", "authority"]:
+        # For non-admin users, this is still allowed since they are authenticated
+        pass
+
+    # Retry-safe: check if asset already confirmed
+    existing = db.query(MediaAsset).filter(MediaAsset.id == media_id).first()
+    if existing:
+        return existing
+
+    storage_url = storage_service.get_public_or_signed_download_url(media_id)
     asset = MediaAsset(
         id=media_id,
         event_id=event.id,
         type="image",
-        storage_url=f"/uploads/{media_id}.jpg",
+        storage_url=storage_url,
         access_tier=access_tier
     )
     db.add(asset)

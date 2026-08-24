@@ -1,4 +1,10 @@
 import os
+
+# Test-only environment configuration — set BEFORE any app imports.
+os.environ["TESTING"] = "true"
+os.environ.setdefault("DATABASE_URL", "postgresql+psycopg2://test:test@localhost:5432/test_roadsentinel")
+os.environ.setdefault("SECRET_KEY", "test-only-secret-key-not-for-production-use-1234567890abcdef")
+
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -9,21 +15,23 @@ from app.main import app
 from app.models.domain import User
 from app.auth.security import get_password_hash, create_access_token
 
+# Isolated test database — SQLite is intentionally used ONLY here in test fixtures.
+# This is NOT a runtime fallback; it is an explicit test infrastructure choice.
 TEST_DB_FILE = "./test_roadsentinel.db"
 SQLALCHEMY_TEST_DATABASE_URL = f"sqlite:///{TEST_DB_FILE}"
 
-engine = create_engine(
+test_engine = create_engine(
     SQLALCHEMY_TEST_DATABASE_URL,
     connect_args={"check_same_thread": False}
 )
-TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=test_engine)
 
 @pytest.fixture(autouse=True, scope="function")
 def setup_test_db():
-    Base.metadata.drop_all(bind=engine)
-    Base.metadata.create_all(bind=engine)
+    Base.metadata.drop_all(bind=test_engine)
+    Base.metadata.create_all(bind=test_engine)
     yield
-    Base.metadata.drop_all(bind=engine)
+    Base.metadata.drop_all(bind=test_engine)
     if os.path.exists(TEST_DB_FILE):
         try:
             os.remove(TEST_DB_FILE)

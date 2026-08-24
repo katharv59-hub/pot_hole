@@ -9,7 +9,11 @@ import {
   CheckCircle2, X
 } from 'lucide-react';
 
-export const DriverDashboard: React.FC = () => {
+interface DriverDashboardProps {
+  onBboxChange?: (bbox: [number, number, number, number]) => void;
+}
+
+export const DriverDashboard: React.FC<DriverDashboardProps> = ({ onBboxChange: parentBboxChange }) => {
   const [events, setEvents] = useState<RoadEvent[]>([]);
   const [myReports, setMyReports] = useState<Report[]>([]);
   const [activeTab, setActiveTab] = useState<'map' | 'reports' | 'route'>('map');
@@ -52,6 +56,8 @@ export const DriverDashboard: React.FC = () => {
   const handleBboxChange = (bbox: [number, number, number, number]) => {
     wsClient.subscribeBbox(bbox);
     fetchRoadEvents(bbox.join(',')).then(setEvents).catch(console.error);
+    // Notify parent (App.tsx) for reconnect reconciliation bbox tracking
+    if (parentBboxChange) parentBboxChange(bbox);
   };
 
   const checkProximityAlert = (newEvent: RoadEvent) => {
@@ -315,25 +321,32 @@ export const DriverDashboard: React.FC = () => {
               {routeSafetyResult && (
                 <div className="glass-panel" style={{ padding: '16px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
-                    <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>Route Safety Score:</span>
-                    <span
-                      style={{
-                        fontSize: '24px',
-                        fontWeight: 800,
-                        color: routeSafetyResult.overall_safety_score > 70 ? '#4ade80' : '#f87171',
-                      }}
-                    >
-                      {routeSafetyResult.overall_safety_score} / 100
-                    </span>
+                    <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>Official Road Score:</span>
+                    {routeSafetyResult.overall_safety_score !== null ? (
+                      <span
+                        style={{
+                          fontSize: '24px',
+                          fontWeight: 800,
+                          color: routeSafetyResult.overall_safety_score > 70 ? '#4ade80' : '#f87171',
+                        }}
+                      >
+                        {routeSafetyResult.overall_safety_score} / 100
+                      </span>
+                    ) : (
+                      <span style={{ fontSize: '12px', fontWeight: 600, color: '#f59e0b' }}>
+                        No scored road-network data
+                      </span>
+                    )}
                   </div>
 
                   <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '12px' }}>
-                    <div>Hazards on Route: <b>{routeSafetyResult.detected_hazards_on_route.length}</b></div>
+                    <div>Hazards on Route: <b style={{ color: '#ef4444' }}>{routeSafetyResult.detected_hazards_on_route.length}</b></div>
                     <div>Scored Segments: <b>{routeSafetyResult.scored_segments_count}</b></div>
+                    <div>Unscored Stretches: <b>{routeSafetyResult.unscored_stretches_count}</b></div>
                   </div>
 
-                  <div style={{ fontSize: '10px', padding: '6px', borderRadius: '4px', background: 'rgba(99, 102, 241, 0.15)', color: '#a5b4fc', border: '1px solid rgba(99, 102, 241, 0.3)' }}>
-                    🗺️ Google Maps Driving Route Active
+                  <div style={{ fontSize: '10px', padding: '6px 8px', borderRadius: '4px', background: 'rgba(99, 102, 241, 0.15)', color: '#a5b4fc', border: '1px solid rgba(99, 102, 241, 0.3)' }}>
+                    📍 Hazard Location Intelligence Stretch (Unscored Network)
                   </div>
                 </div>
               )}

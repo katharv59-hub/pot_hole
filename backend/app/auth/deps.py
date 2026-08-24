@@ -92,5 +92,5 @@ def get_current_device(
         DeviceVehicleAssignment.assigned_to.is_(None)
     ).order_by(DeviceVehicleAssignment.assigned_from.desc()).first()
     
-    assigned_vehicle_id = assignment.vehicle_id if assignment else device.vehicle_id
+    assigned_vehicle_id = assignment.vehicle_id if assignment else None
     return device, assigned_vehicle_id
