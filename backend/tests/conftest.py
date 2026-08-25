@@ -67,3 +67,20 @@ def create_test_admin_token(email: str = "testadmin@roadsentinel.io") -> str:
     token = create_access_token(subject=user.id, role="admin")
     db.close()
     return token
+
+def create_test_driver_token(email: str = "testdriver@roadsentinel.io") -> str:
+    db = TestingSessionLocal()
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        user = User(
+            email=email,
+            hashed_password=get_password_hash("driverpassword123"),
+            name="Test Driver",
+            role="driver"
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+    token = create_access_token(subject=user.id, role="driver")
+    db.close()
+    return token

@@ -204,6 +204,18 @@ def get_road_events(
     return events
 
 
+@router.get("/events/{event_id}", response_model=RoadEventResponse)
+def get_road_event_by_id(
+    event_id: str,
+    db: Session = Depends(get_db)
+):
+    """Spec §4 / Phase 3: Fetch single canonical RoadEvent by its server-assigned event ID."""
+    event = db.query(RoadEvent).filter(RoadEvent.id == event_id).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Road event not found")
+    return event
+
+
 # Exact endpoint matching frontend-spec §5.1 & backend-spec §6 (Fix #9)
 @router.patch("/admin/events/{event_id}/status", response_model=RoadEventResponse)
 @router.patch("/events/admin/{event_id}/status", response_model=RoadEventResponse)
