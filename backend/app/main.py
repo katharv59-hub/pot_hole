@@ -91,9 +91,36 @@ async def websocket_endpoint(
                 msg = json.loads(data_text)
                 if msg.get("type") == "subscribe" and "bbox" in msg:
                     bbox = msg.get("bbox")
-                    if isinstance(bbox, list) and len(bbox) == 4:
-                        ws_manager.update_subscription(websocket, bbox)
+                    if isinstance(bbox, (list, tuple)) and len(bbox) == 4:
+                        try:
+                            min_lon, min_lat, max_lon, max_lat = [float(c) for c in bbox]
+                            if (-180.0 <= min_lon <= 180.0 and -180.0 <= max_lon <= 180.0 and
+                                -90.0 <= min_lat <= 90.0 and -90.0 <= max_lat <= 90.0 and
+                                min_lon <= max_lon and min_lat <= max_lat):
+                                ws_manager.update_subscription(websocket, [min_lon, min_lat, max_lon, max_lat])
+                                await websocket.send_text(json.dumps({
+                                    "type": "subscription_ack",
+                                    "bbox": [min_lon, min_lat, max_lon, max_lat]
+                                }))
+                            else:
+                                await websocket.send_text(json.dumps({
+                                    "type": "error",
+                                    "message": "Invalid bbox coordinates: bounds must be [minLon, minLat, maxLon, maxLat] with valid geographical ranges."
+                                }))
+                        except (ValueError, TypeError):
+                            await websocket.send_text(json.dumps({
+                                "type": "error",
+                                "message": "Malformed bbox: coordinates must be numeric."
+                            }))
+                    else:
+                        await websocket.send_text(json.dumps({
+                            "type": "error",
+                            "message": "Malformed bbox: expected 4-element array [minLon, minLat, maxLon, maxLat]."
+                        }))
             except json.JSONDecodeError:
-                pass
+                await websocket.send_text(json.dumps({
+                    "type": "error",
+                    "message": "Invalid JSON message payload."
+                }))
     except WebSocketDisconnect:
         ws_manager.disconnect(websocket)

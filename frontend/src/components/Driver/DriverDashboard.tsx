@@ -5,8 +5,7 @@ import { wsClient } from '../../services/websocket';
 import { InteractiveMap } from '../Map/InteractiveMap';
 import { useConfig } from '../../context/ConfigContext';
 import {
-  AlertTriangle, Navigation, PlusCircle, History, ShieldCheck, MapPin,
-  CheckCircle2, X
+  AlertTriangle, Navigation, PlusCircle, History, ShieldCheck, X
 } from 'lucide-react';
 
 interface DriverDashboardProps {
@@ -35,14 +34,34 @@ export const DriverDashboard: React.FC<DriverDashboardProps> = ({ onBboxChange: 
 
   const { getSeverityColor, getSeverityLabel, getEventTypeLabel } = useConfig();
 
+  const checkProximityAlert = (newEvent: RoadEvent) => {
+    const driverLat = 19.0750;
+    const driverLon = 72.8800;
+    const latDiff = Math.abs(newEvent.latitude - driverLat);
+    const lonDiff = Math.abs(newEvent.longitude - driverLon);
+
+    if (latDiff < 0.02 && lonDiff < 0.02 && newEvent.severity >= 0.6) {
+      setProximityAlert({
+        event: newEvent,
+        distanceM: Math.round(latDiff * 111000),
+      });
+    }
+  };
+
   useEffect(() => {
     fetchRoadEvents().then(setEvents).catch(console.error);
     fetchMyReports().then(setMyReports).catch(console.error);
 
     const unsubscribe = wsClient.addListener((type, data) => {
       if (type === 'event_created') {
-        setEvents((prev) => [data as RoadEvent, ...prev]);
-        checkProximityAlert(data as RoadEvent);
+        const newEvt = data as RoadEvent;
+        setEvents((prev) => {
+          if (prev.some((e) => e.id === newEvt.id)) {
+            return prev.map((e) => (e.id === newEvt.id ? newEvt : e));
+          }
+          return [newEvt, ...prev];
+        });
+        checkProximityAlert(newEvt);
       } else if (type === 'event_updated') {
         setEvents((prev) =>
           prev.map((e) => (e.id === data.event_id ? { ...e, status: data.status } : e))
@@ -58,20 +77,6 @@ export const DriverDashboard: React.FC<DriverDashboardProps> = ({ onBboxChange: 
     fetchRoadEvents(bbox.join(',')).then(setEvents).catch(console.error);
     // Notify parent (App.tsx) for reconnect reconciliation bbox tracking
     if (parentBboxChange) parentBboxChange(bbox);
-  };
-
-  const checkProximityAlert = (newEvent: RoadEvent) => {
-    const driverLat = 19.0750;
-    const driverLon = 72.8800;
-    const latDiff = Math.abs(newEvent.latitude - driverLat);
-    const lonDiff = Math.abs(newEvent.longitude - driverLon);
-
-    if (latDiff < 0.02 && lonDiff < 0.02 && newEvent.severity >= 0.6) {
-      setProximityAlert({
-        event: newEvent,
-        distanceM: Math.round(latDiff * 111000),
-      });
-    }
   };
 
   const handleReportSubmit = async (e: React.FormEvent) => {

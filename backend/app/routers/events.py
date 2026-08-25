@@ -235,7 +235,12 @@ async def update_event_status(
     db.refresh(event)
 
     event_resp = RoadEventResponse.model_validate(event).model_dump(mode="json")
-    await ws_manager.broadcast_event("event_updated", {"event_id": event.id, "status": event.status})
+    await ws_manager.broadcast_event("event_updated", {
+        "event_id": event.id,
+        "status": event.status,
+        "latitude": event.latitude,
+        "longitude": event.longitude
+    })
     return event
 
 

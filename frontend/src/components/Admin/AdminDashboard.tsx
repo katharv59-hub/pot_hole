@@ -2,13 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { RoadEvent, Device, AnalyticsSummary } from '../../types';
 import {
   fetchRoadEvents, updateEventStatus, fetchDevices,
-  registerDevice, reassignDevice, fetchAnalyticsSummary
+  registerDevice, fetchAnalyticsSummary
 } from '../../services/api';
 import { wsClient } from '../../services/websocket';
 import { useConfig } from '../../context/ConfigContext';
 import {
-  CheckCircle, AlertOctagon, Copy, Download, RefreshCw, Cpu,
-  BarChart3, Layers, Filter, Check, X, ShieldAlert, Clock
+  CheckCircle, Copy, Download, RefreshCw, Cpu,
+  BarChart3, Filter, Check, X, ShieldAlert
 } from 'lucide-react';
 
 export const AdminDashboard: React.FC = () => {
@@ -19,7 +19,6 @@ export const AdminDashboard: React.FC = () => {
 
   // Filter States
   const [statusFilter, setStatusFilter] = useState<string>('unverified');
-  const [modalityFilter, setModalityFilter] = useState<string>('all');
 
   // Verification Modal State
   const [selectedEvent, setSelectedEvent] = useState<RoadEvent | null>(null);
