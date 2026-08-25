@@ -205,6 +205,7 @@ class ReportCreate(BaseModel):
     latitude: float
     longitude: float
     description: Optional[str] = None
+    event_id: Optional[str] = None
 
 class ReportResponse(BaseModel):
     id: str

@@ -5,13 +5,13 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
 from app.database import get_db
-from app.models.domain import RoadEvent, Device, MLPrediction, MediaAsset, User, utc_now
+from app.models.domain import RoadEvent, Device, Vehicle, MLPrediction, MediaAsset, Report, User, utc_now
 from app.schemas.domain_schemas import (
     EventIngestionRequest, EventIngestionResponse,
     RoadEventResponse, EventStatusPatch,
     UploadUrlResponse, MediaAssetResponse
 )
-from app.auth.deps import get_current_device, get_current_user, require_role
+from app.auth.deps import get_current_device, get_current_user, get_current_user_optional, require_role
 from app.services.event_service import (
     check_event_idempotency,
     classify_raw_imu_sensor_data,
@@ -244,13 +244,46 @@ async def update_event_status(
     return event
 
 
+@router.get("/events/{event_id}/media", response_model=List[MediaAssetResponse])
+def get_event_media(
+    event_id: str,
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional)
+):
+    """
+    Spec §11 & §13A: Retrieve media assets for an event.
+    Privacy enforcement:
+    - Admin/Authority or reporting vehicle owner -> view both 'raw' and 'processed' media.
+    - Other drivers or unauthenticated callers -> view ONLY 'processed' tier media.
+    """
+    event = db.query(RoadEvent).filter(RoadEvent.id == event_id).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Road event not found")
+
+    is_owner_or_admin = False
+    if current_user:
+        if current_user.role in ["admin", "authority"]:
+            is_owner_or_admin = True
+        else:
+            # Check if current user is the owner of the vehicle that reported this event
+            veh = db.query(Vehicle).filter(Vehicle.id == event.vehicle_id).first()
+            if veh and veh.owner_id == current_user.id:
+                is_owner_or_admin = True
+
+    query = db.query(MediaAsset).filter(MediaAsset.event_id == event_id)
+    if not is_owner_or_admin:
+        query = query.filter(MediaAsset.access_tier == "processed")
+
+    return query.all()
+
+
 @router.post("/events/{event_id}/media/upload-url", response_model=UploadUrlResponse)
 def get_event_media_upload_url(
     event_id: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Spec §11: Generate pre-signed URL slot for event media evidence. Requires authentication."""
+    """Spec §11 & §13A: Generate pre-signed URL slot for event media evidence."""
     event = db.query(RoadEvent).filter(RoadEvent.id == event_id).first()
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
@@ -268,30 +301,73 @@ def confirm_event_media(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Spec §11: Confirm event media upload. Retry-safe, authenticated, uses storage provider."""
+    """Spec §11 & §13A: Confirm event media upload. Retry-safe, authenticated, mutually exclusive parent."""
     event = db.query(RoadEvent).filter(RoadEvent.id == event_id).first()
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
 
-    # Only admin/authority or the device owner's associated user can confirm media
-    if current_user.role not in ["admin", "authority"]:
-        # For non-admin users, this is still allowed since they are authenticated
-        pass
+    # Only admin/authority can confirm media directly as 'processed'; drivers default to 'raw'
+    validated_tier = access_tier if current_user.role in ["admin", "authority"] else "raw"
 
     # Retry-safe: check if asset already confirmed
     existing = db.query(MediaAsset).filter(MediaAsset.id == media_id).first()
     if existing:
+        if existing.event_id != event.id:
+            raise HTTPException(status_code=400, detail="Media asset already bound to different parent resource")
         return existing
 
     storage_url = storage_service.get_public_or_signed_download_url(media_id)
     asset = MediaAsset(
         id=media_id,
         event_id=event.id,
+        report_id=None,
         type="image",
         storage_url=storage_url,
-        access_tier=access_tier
+        access_tier=validated_tier
     )
     db.add(asset)
     db.commit()
     db.refresh(asset)
+    return asset
+
+
+@router.get("/media/{media_id}", response_model=MediaAssetResponse)
+def get_media_asset_by_id(
+    media_id: str,
+    db: Session = Depends(get_db),
+    current_user: Optional[User] = Depends(get_current_user_optional)
+):
+    """
+    Spec §11 & §13A: Direct media asset access with privacy & RBAC enforcement.
+    """
+    asset = db.query(MediaAsset).filter(MediaAsset.id == media_id).first()
+    if not asset:
+        raise HTTPException(status_code=404, detail="Media asset not found")
+
+    # If attached to a report
+    if asset.report_id:
+        report = db.query(Report).filter(Report.id == asset.report_id).first()
+        if not report:
+            raise HTTPException(status_code=404, detail="Parent report not found")
+        if not current_user or (report.user_id != current_user.id and current_user.role not in ["admin", "authority"]):
+            raise HTTPException(status_code=403, detail="Not authorized to access this report media")
+        return asset
+
+    # If attached to an event
+    if asset.event_id:
+        if asset.access_tier == "processed":
+            return asset
+        # Raw tier requires admin/authority or reporting vehicle owner
+        if not current_user:
+            raise HTTPException(status_code=403, detail="Authentication required to access raw event media")
+        if current_user.role in ["admin", "authority"]:
+            return asset
+        
+        event = db.query(RoadEvent).filter(RoadEvent.id == asset.event_id).first()
+        if event:
+            veh = db.query(Vehicle).filter(Vehicle.id == event.vehicle_id).first()
+            if veh and veh.owner_id == current_user.id:
+                return asset
+        raise HTTPException(status_code=403, detail="Not authorized to access another vehicle's raw media")
+
     return asset
