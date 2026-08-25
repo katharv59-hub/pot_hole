@@ -1,6 +1,6 @@
+import os
 from logging.config import fileConfig
-from sqlalchemy import engine_from_config
-from sqlalchemy import pool
+from sqlalchemy import create_engine, pool
 from alembic import context
 
 from app.config import settings
@@ -13,8 +13,15 @@ if config.config_file_name:
 
 target_metadata = Base.metadata
 
+def get_database_url() -> str:
+    """Dynamically resolves DATABASE_URL from environment variable or app settings."""
+    url = os.getenv("DATABASE_URL") or settings.DATABASE_URL
+    if not url:
+        raise RuntimeError("DATABASE_URL is not configured for Alembic migrations.")
+    return url
+
 def run_migrations_offline() -> None:
-    url = settings.DATABASE_URL
+    url = get_database_url()
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -25,11 +32,9 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 def run_migrations_online() -> None:
-    configuration = config.get_section(config.config_ini_section)
-    configuration["sqlalchemy.url"] = settings.DATABASE_URL
-    connectable = engine_from_config(
-        configuration,
-        prefix="sqlalchemy.",
+    url = get_database_url()
+    connectable = create_engine(
+        url,
         poolclass=pool.NullPool,
     )
     with connectable.connect() as connection:
