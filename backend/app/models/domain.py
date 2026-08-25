@@ -150,13 +150,19 @@ class MLPrediction(Base):
     event = relationship("RoadEvent", back_populates="ml_predictions")
 
 
-# Use PostGIS geometry type for RoadSegment when GeoAlchemy2 is available.
-# Falls back to JSON only in isolated test environments without PostGIS.
-try:
-    from geoalchemy2 import Geometry as PostGISGeometry
-    _GEOMETRY_TYPE = PostGISGeometry('LINESTRING', srid=4326)
-except ImportError:
-    _GEOMETRY_TYPE = JSON  # Test-only fallback
+# Authoritative PostGIS geometry type for RoadSegment in production runtime.
+# Uses standard GeoAlchemy2 LINESTRING(4326) with GiST spatial index.
+# In isolated SQLite test fixtures (TESTING=true), falls back to JSON to avoid SpatiaLite requirements.
+_is_testing = os.getenv("TESTING", "").lower() == "true"
+
+if not _is_testing:
+    try:
+        from geoalchemy2 import Geometry as PostGISGeometry
+        _GEOMETRY_TYPE = PostGISGeometry('LINESTRING', srid=4326)
+    except ImportError:
+        _GEOMETRY_TYPE = JSON
+else:
+    _GEOMETRY_TYPE = JSON
 
 
 class RoadSegment(Base):

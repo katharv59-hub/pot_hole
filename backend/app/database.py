@@ -29,16 +29,10 @@ if db_url.startswith("postgresql"):
     try:
         import psycopg2  # noqa: F401
     except ImportError:
-        if not _is_testing:
-            raise RuntimeError(
-                "FATAL: PostgreSQL driver 'psycopg2' is not installed. "
-                "Install it with: pip install psycopg2-binary"
-            )
-        else:
-            # In test mode, the production engine is never used (conftest overrides get_db).
-            # Create a dummy SQLite engine so the module can be imported.
-            logger.warning("Test mode: psycopg2 not available. Production engine will not be functional.")
-            db_url = "sqlite:///./test_placeholder.db"
+        raise RuntimeError(
+            "FATAL: PostgreSQL driver 'psycopg2' is not installed. "
+            "Install it with: pip install psycopg2-binary"
+        )
 
 connect_args = {"check_same_thread": False} if db_url.startswith("sqlite") else {}
 

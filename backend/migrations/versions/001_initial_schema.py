@@ -18,7 +18,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # Enable PostGIS extension
+    # 0. Enable PostGIS extension
     op.execute("CREATE EXTENSION IF NOT EXISTS postgis")
 
     # 1. users
@@ -140,7 +140,7 @@ def upgrade() -> None:
     op.create_index('ix_telemetry_device_id', 'telemetry', ['device_id'])
     op.create_index('ix_telemetry_device_timestamp', 'telemetry', ['device_timestamp'])
 
-    # 8. reports (must precede media_assets which has FK to reports.id)
+    # 8. reports (references users.id and road_events.id)
     op.create_table(
         'reports',
         sa.Column('id', sa.String(), primary_key=True),
@@ -155,7 +155,7 @@ def upgrade() -> None:
     op.create_index('ix_reports_user_id', 'reports', ['user_id'])
     op.create_index('ix_reports_status', 'reports', ['status'])
 
-    # 9. media_assets
+    # 9. media_assets (references road_events.id and reports.id)
     op.create_table(
         'media_assets',
         sa.Column('id', sa.String(), primary_key=True),
@@ -170,7 +170,7 @@ def upgrade() -> None:
     op.create_index('ix_media_assets_event_id', 'media_assets', ['event_id'])
     op.create_index('ix_media_assets_report_id', 'media_assets', ['report_id'])
 
-    # 10. ml_predictions
+    # 10. ml_predictions (references road_events.id)
     op.create_table(
         'ml_predictions',
         sa.Column('id', sa.String(), primary_key=True),
@@ -196,15 +196,16 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # Drop tables in exact reverse dependency order
     op.drop_table('geo_index_buckets')
     op.drop_table('ml_predictions')
     op.drop_table('media_assets')
+    op.drop_table('reports')
     op.drop_table('telemetry')
     op.drop_table('road_events')
     op.drop_table('road_segments')
     op.drop_table('device_vehicle_assignments')
     op.drop_table('devices')
     op.drop_table('vehicles')
-    op.drop_table('reports')
     op.drop_table('users')
-    op.execute("DROP EXTENSION IF EXISTS postgis")
+    op.execute("DROP EXTENSION IF EXISTS postgis CASCADE")

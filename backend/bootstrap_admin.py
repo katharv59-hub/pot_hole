@@ -13,7 +13,6 @@ def bootstrap_admin_user(
     """CLI / test helper script for creating privileged admin/authority accounts (Fix #5)."""
     close_db = False
     if db is None:
-        Base.metadata.create_all(bind=engine)
         db = SessionLocal()
         close_db = True
     

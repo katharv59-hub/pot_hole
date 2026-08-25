@@ -14,10 +14,7 @@ from app.auth.security import decode_jwt_token
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("roadsentinel_backend")
 
-# Phase 2: Schema management handled via Alembic migrations in production.
-# create_all is only executed for development/test environment bootstrapping when explicitly enabled.
-if os.getenv("AUTO_CREATE_TABLES", "false").lower() == "true":
-    Base.metadata.create_all(bind=engine)
+# Production schema management is strictly authoritative via Alembic migrations.
 
 app = FastAPI(
     title=settings.PROJECT_NAME,

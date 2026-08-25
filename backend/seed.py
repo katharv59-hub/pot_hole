@@ -7,7 +7,6 @@ from app.models.domain import (
 from app.auth.security import get_password_hash, hash_credential
 
 def seed_database():
-    Base.metadata.create_all(bind=engine)
     db = SessionLocal()
     
     # Check if already seeded
