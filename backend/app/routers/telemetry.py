@@ -4,6 +4,7 @@ from app.database import get_db
 from app.models.domain import Telemetry, utc_now
 from app.schemas.domain_schemas import TelemetryIngestionRequest
 from app.auth.deps import get_current_device
+from app.services.event_service import resolve_temporal_vehicle_assignment
 
 router = APIRouter(prefix="/telemetry", tags=["Telemetry Data Streams"])
 
@@ -18,22 +19,23 @@ def ingest_telemetry(
     /telemetry accepts raw continuous sensor streams with NO hazard claim attached (for ML dataset curation).
     Strictly independent: does NOT create RoadEvent or MLPrediction rows.
     """
-    device, assigned_vehicle_id = device_context
+    device, _ = device_context
     
-    # Authoritative Vehicle Identity check (Phase 5)
-    if not assigned_vehicle_id:
+    # Authoritative Temporal Vehicle Identity check
+    temporal_vehicle_id = resolve_temporal_vehicle_assignment(db, device.id, req.device_timestamp)
+    if not temporal_vehicle_id:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"Device '{device.id}' has no active vehicle assignment in database. Telemetry rejected."
+            detail=f"Device '{device.id}' had no active vehicle assignment at device timestamp '{req.device_timestamp}'. Telemetry rejected."
         )
 
-    if req.vehicle_id and req.vehicle_id != assigned_vehicle_id:
+    if req.vehicle_id and req.vehicle_id != temporal_vehicle_id:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"Vehicle ID '{req.vehicle_id}' in payload does not match active device assignment '{assigned_vehicle_id}'"
+            detail=f"Vehicle ID '{req.vehicle_id}' in payload does not match active device assignment '{temporal_vehicle_id}' at telemetry timestamp."
         )
 
-    effective_vehicle_id = assigned_vehicle_id
+    effective_vehicle_id = temporal_vehicle_id
     
     telemetry = Telemetry(
         device_id=device.id,

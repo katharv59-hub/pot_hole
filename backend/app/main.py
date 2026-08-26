@@ -22,10 +22,10 @@ app = FastAPI(
     description="ROADSentinel — Road Hazard Detection & Spatial Intelligence Platform (v0.4 Implementation Baseline)"
 )
 
-# Enable CORS for Vite dev server and web dashboard
+# Enable CORS for configured frontend origins (never wildcard with credentials)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.cors_origins_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -61,20 +61,27 @@ async def websocket_endpoint(
     websocket: WebSocket,
     token: str = Query(None)
 ):
-    """Spec §7 & Phase 6: Authenticated Real-time WebSocket connection endpoint."""
-    # 1. Extract token from query parameter or Authorization header
+    """
+    Spec §7 & Post-Audit Remediation:
+    Authenticated Real-time WebSocket connection endpoint.
+    Authentication precedence:
+    1. Authorization header ('Bearer <token>')
+    2. Query parameter (?token=...) — retained strictly as local browser fallback.
+    Tokens are never logged.
+    """
+    # 1. Extract token from header or query parameter
     query_token = token or websocket.query_params.get("token")
     auth_header = websocket.headers.get("authorization")
     if auth_header and auth_header.startswith("Bearer "):
         query_token = auth_header.split(" ")[1]
 
-    # 2. Reject missing token (Phase 6 requirement)
+    # 2. Reject missing token upfront before accepting connection
     if not query_token:
         logger.warning("WebSocket connection attempt rejected: missing authentication token.")
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Authentication token missing")
         return
 
-    # 3. Validate token before accepting connection (Phase 6 requirement)
+    # 3. Validate token before accepting connection
     payload = decode_jwt_token(query_token)
     if not payload:
         logger.warning("WebSocket connection attempt rejected: invalid or expired access token.")

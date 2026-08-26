@@ -1,6 +1,6 @@
 import os
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session
@@ -17,7 +17,8 @@ from app.services.event_service import (
     check_event_idempotency,
     classify_raw_imu_sensor_data,
     map_severity_to_label,
-    process_event_corroboration_and_dedup
+    process_event_corroboration_and_dedup,
+    resolve_temporal_vehicle_assignment
 )
 from app.websocket.manager import ws_manager
 from app.services.storage_service import storage_service
@@ -31,23 +32,24 @@ async def ingest_road_event(
     db: Session = Depends(get_db),
     device_context: tuple = Depends(get_current_device)
 ):
-    device, assigned_vehicle_id = device_context
+    device, _ = device_context
     warnings = []
     
-    # 1. Authoritative Vehicle Identity check (Fix #7, Spec §4.4, §5.4)
-    if not assigned_vehicle_id:
+    # 1. Authoritative Temporal Vehicle Identity Resolution (Spec §4.1, §5.4 & Post-Audit Remediation)
+    temporal_vehicle_id = resolve_temporal_vehicle_assignment(db, device.id, req.device_timestamp)
+    if not temporal_vehicle_id:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"Device '{device.id}' has no active vehicle assignment in database. Ingestion rejected."
+            detail=f"Device '{device.id}' had no active vehicle assignment at device timestamp '{req.device_timestamp}'. Ingestion rejected."
         )
 
-    if req.vehicle_id and req.vehicle_id != assigned_vehicle_id:
+    if req.vehicle_id and req.vehicle_id != temporal_vehicle_id:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"Vehicle ID '{req.vehicle_id}' in payload does not match device's authoritative assignment '{assigned_vehicle_id}'"
+            detail=f"Vehicle ID '{req.vehicle_id}' in payload does not match device's authoritative assignment '{temporal_vehicle_id}' at event timestamp."
         )
         
-    effective_vehicle_id = assigned_vehicle_id
+    effective_vehicle_id = temporal_vehicle_id
 
     # 2. Check Idempotency (device_id, device_event_id) (Spec §8)
     existing_dup = check_event_idempotency(db, device.id, req.device_event_id)
@@ -344,13 +346,15 @@ def confirm_event_media(
         return existing
 
     storage_url = storage_service.get_public_or_signed_download_url(media_id)
+    retention_expires = utc_now() + timedelta(days=settings.DEFAULT_MEDIA_RETENTION_DAYS)
     asset = MediaAsset(
         id=media_id,
         event_id=event.id,
         report_id=None,
         type="image",
         storage_url=storage_url,
-        access_tier=validated_tier
+        access_tier=validated_tier,
+        retention_expires_at=retention_expires
     )
     db.add(asset)
     db.commit()

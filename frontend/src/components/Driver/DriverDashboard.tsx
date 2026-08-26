@@ -4,6 +4,7 @@ import { fetchRoadEvents, createReport, fetchMyReports, checkRouteSafety } from 
 import { wsClient } from '../../services/websocket';
 import { InteractiveMap } from '../Map/InteractiveMap';
 import { useConfig } from '../../context/ConfigContext';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   AlertTriangle, Navigation, PlusCircle, History, ShieldCheck, X
 } from 'lucide-react';
@@ -13,10 +14,17 @@ interface DriverDashboardProps {
 }
 
 export const DriverDashboard: React.FC<DriverDashboardProps> = ({ onBboxChange: parentBboxChange }) => {
-  const [events, setEvents] = useState<RoadEvent[]>([]);
+  const queryClient = useQueryClient();
+  const [bboxStr, setBboxStr] = useState<string | undefined>(undefined);
   const [myReports, setMyReports] = useState<Report[]>([]);
   const [activeTab, setActiveTab] = useState<'map' | 'reports' | 'route'>('map');
   const [proximityAlert, setProximityAlert] = useState<{ event: RoadEvent; distanceM: number } | null>(null);
+
+  // TanStack Query authoritative server state for RoadEvents
+  const { data: events = [] } = useQuery<RoadEvent[]>({
+    queryKey: ['roadEvents', bboxStr],
+    queryFn: () => fetchRoadEvents(bboxStr),
+  });
 
   // Manual Report Modal State
   const [showReportModal, setShowReportModal] = useState(false);
@@ -35,6 +43,7 @@ export const DriverDashboard: React.FC<DriverDashboardProps> = ({ onBboxChange: 
   const { getSeverityColor, getSeverityLabel, getEventTypeLabel } = useConfig();
 
   const checkProximityAlert = (newEvent: RoadEvent) => {
+    // Development simulation coordinates — live hardware GPS currently decoupled
     const driverLat = 19.0750;
     const driverLon = 72.8800;
     const latDiff = Math.abs(newEvent.latitude - driverLat);
@@ -49,13 +58,14 @@ export const DriverDashboard: React.FC<DriverDashboardProps> = ({ onBboxChange: 
   };
 
   useEffect(() => {
-    fetchRoadEvents().then(setEvents).catch(console.error);
     fetchMyReports().then(setMyReports).catch(console.error);
 
     const unsubscribe = wsClient.addListener((type, data) => {
       if (type === 'event_created') {
         const newEvt = data as RoadEvent;
-        setEvents((prev) => {
+        // Update TanStack Query cache as authoritative store
+        queryClient.setQueriesData<RoadEvent[]>({ queryKey: ['roadEvents'] }, (prev) => {
+          if (!prev) return [newEvt];
           if (prev.some((e) => e.id === newEvt.id)) {
             return prev.map((e) => (e.id === newEvt.id ? newEvt : e));
           }
@@ -63,18 +73,20 @@ export const DriverDashboard: React.FC<DriverDashboardProps> = ({ onBboxChange: 
         });
         checkProximityAlert(newEvt);
       } else if (type === 'event_updated') {
-        setEvents((prev) =>
-          prev.map((e) => (e.id === data.event_id ? { ...e, status: data.status } : e))
-        );
+        queryClient.setQueriesData<RoadEvent[]>({ queryKey: ['roadEvents'] }, (prev) => {
+          if (!prev) return [];
+          return prev.map((e) => (e.id === data.event_id ? { ...e, status: data.status } : e));
+        });
       }
     });
 
     return () => unsubscribe();
-  }, []);
+  }, [queryClient]);
 
   const handleBboxChange = (bbox: [number, number, number, number]) => {
+    const formattedBbox = bbox.join(',');
+    setBboxStr(formattedBbox);
     wsClient.subscribeBbox(bbox);
-    fetchRoadEvents(bbox.join(',')).then(setEvents).catch(console.error);
     // Notify parent (App.tsx) for reconnect reconciliation bbox tracking
     if (parentBboxChange) parentBboxChange(bbox);
   };
@@ -407,10 +419,18 @@ export const DriverDashboard: React.FC<DriverDashboardProps> = ({ onBboxChange: 
           >
             <AlertTriangle size={24} color="#f87171" />
             <div>
-              <h4 style={{ fontSize: '14px', color: '#ffffff' }}>PROXIMITY WARNING — {getEventTypeLabel(proximityAlert.event.event_type).toUpperCase()}</h4>
-              <p style={{ fontSize: '12px', color: '#fca5a5' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <h4 style={{ fontSize: '14px', color: '#ffffff', margin: 0 }}>PROXIMITY WARNING — {getEventTypeLabel(proximityAlert.event.event_type).toUpperCase()}</h4>
+                <span style={{ fontSize: '10px', background: 'rgba(239, 68, 68, 0.25)', color: '#fca5a5', padding: '2px 6px', borderRadius: '4px', border: '1px solid rgba(239, 68, 68, 0.4)' }}>
+                  Development Simulation
+                </span>
+              </div>
+              <p style={{ fontSize: '12px', color: '#fca5a5', margin: '2px 0 0 0' }}>
                 High-severity hazard detected {proximityAlert.distanceM}m ahead. Slow down.
               </p>
+              <div style={{ fontSize: '10px', color: 'rgba(254, 202, 202, 0.7)', marginTop: '2px' }}>
+                Live vehicle location unavailable — simulated driver coordinates
+              </div>
             </div>
             <button
               onClick={() => setProximityAlert(null)}
@@ -426,7 +446,10 @@ export const DriverDashboard: React.FC<DriverDashboardProps> = ({ onBboxChange: 
       {showReportModal && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000 }}>
           <div className="glass-panel" style={{ width: '420px', padding: '24px' }}>
-            <h3 style={{ fontSize: '18px', marginBottom: '12px' }}>Report Road Hazard</h3>
+            <h3 style={{ fontSize: '18px', marginBottom: '4px' }}>Report Road Hazard</h3>
+            <p style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '12px' }}>
+              Development simulation — default coordinates pre-populated
+            </p>
             <form onSubmit={handleReportSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
               <div>
                 <label style={{ fontSize: '12px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Description</label>

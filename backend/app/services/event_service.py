@@ -1,9 +1,10 @@
 import math
 from datetime import datetime, timezone, timedelta
 from typing import Tuple, Optional, List, Dict, Any
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from app.config import settings
-from app.models.domain import RoadEvent, GeoIndexBucket, MLPrediction, utc_now
+from app.models.domain import RoadEvent, GeoIndexBucket, MLPrediction, DeviceVehicleAssignment, utc_now
 
 # Standard Geohash Base32 encoder for spatial indexing
 GEOHASH_BASE32 = "0123456789bcdefghjkmnpqrstuvwxyz"
@@ -68,6 +69,25 @@ def map_severity_to_label(severity_val: float) -> str:
         return "low"
 
 
+def resolve_temporal_vehicle_assignment(db: Session, device_id: str, timestamp: datetime) -> Optional[str]:
+    """
+    Spec §4.1 & Post-Audit Remediation:
+    Resolves the authoritative vehicle assignment for `device_id` valid at `timestamp`.
+    Satisfies `assigned_from <= timestamp` and `(assigned_to IS NULL OR assigned_to >= timestamp)`.
+    Returns vehicle_id or None if no valid assignment existed at that timestamp.
+    """
+    ts_naive = timestamp.replace(tzinfo=None) if timestamp.tzinfo else timestamp
+    assignment = db.query(DeviceVehicleAssignment).filter(
+        DeviceVehicleAssignment.device_id == device_id,
+        DeviceVehicleAssignment.assigned_from <= ts_naive,
+        or_(
+            DeviceVehicleAssignment.assigned_to.is_(None),
+            DeviceVehicleAssignment.assigned_to >= ts_naive
+        )
+    ).order_by(DeviceVehicleAssignment.assigned_from.desc()).first()
+    return assignment.vehicle_id if assignment else None
+
+
 def classify_raw_imu_sensor_data(sensor_data: Dict[str, Any]) -> Optional[Tuple[str, float, float]]:
     """
     Spec §0 Binding Constraint #3 & §2 Raw Mode classification:
@@ -116,24 +136,39 @@ def process_event_corroboration_and_dedup(
     event_type: str
 ) -> Tuple[Optional[RoadEvent], int]:
     """
-    Spec §8: Corroboration semantics:
+    Spec §8 & Post-Audit Remediation: Deterministic Corroboration & Deduplication:
+    Candidates within spatial & temporal window are ranked deterministically by:
+    1. Temporal distance ascending (abs(seconds difference))
+    2. Spatial distance ascending (meters)
+    3. Canonical event ID ascending (tie-breaker)
     Increments corroboration_count ONLY when a DIFFERENT device submits a matching event.
     """
     time_window_start = device_timestamp - timedelta(minutes=settings.CORROBORATION_TIME_WINDOW_MINS)
+    time_window_end = device_timestamp + timedelta(minutes=settings.CORROBORATION_TIME_WINDOW_MINS)
     
-    # Query nearby events within matching time window
     candidates = db.query(RoadEvent).filter(
         RoadEvent.status.in_(["unverified", "verified"]),
         RoadEvent.device_timestamp >= time_window_start,
+        RoadEvent.device_timestamp <= time_window_end,
         RoadEvent.event_type == event_type
     ).all()
     
-    matching_event = None
+    dev_ts_naive = device_timestamp.replace(tzinfo=None) if device_timestamp.tzinfo else device_timestamp
+    eligible_candidates = []
+    
     for cand in candidates:
+        cand_ts_naive = cand.device_timestamp.replace(tzinfo=None) if cand.device_timestamp.tzinfo else cand.device_timestamp
         dist_m = calculate_haversine_distance_m(latitude, longitude, cand.latitude, cand.longitude)
         if dist_m <= settings.CORROBORATION_DISTANCE_METERS:
-            matching_event = cand
-            break
+            temporal_diff_s = abs((dev_ts_naive - cand_ts_naive).total_seconds())
+            # Deterministic tuple: (temporal_distance, spatial_distance, event_id, event_obj)
+            eligible_candidates.append((temporal_diff_s, dist_m, cand.id, cand))
+            
+    matching_event = None
+    if eligible_candidates:
+        # Deterministic sorting guarantee independent of DB row retrieval order
+        eligible_candidates.sort(key=lambda item: (item[0], item[1], item[2]))
+        matching_event = eligible_candidates[0][3]
             
     if matching_event:
         # Check if it's an independent device (different device_id)

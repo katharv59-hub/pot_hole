@@ -14,6 +14,15 @@ class Settings(BaseSettings):
     # Database Configuration (PostgreSQL + PostGIS — sole v0.4 datastore)
     DATABASE_URL: str = ""
     
+    # CORS Configuration — Explicit allowed origins for frontend applications
+    CORS_ORIGINS: str = "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://localhost:8000"
+
+    @property
+    def cors_origins_list(self):
+        if not self.CORS_ORIGINS:
+            return ["http://localhost:5173", "http://127.0.0.1:5173"]
+        return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
+
     # Media Storage Configuration
     STORAGE_PROVIDER: str = "local"  # local | s3
     MEDIA_UPLOAD_DIR: str = os.path.join(os.path.dirname(__file__), "..", "uploads")

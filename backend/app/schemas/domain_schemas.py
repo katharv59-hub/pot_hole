@@ -96,8 +96,8 @@ class VehicleResponse(BaseModel):
 # --- RoadEvent Ingestion & Query Schemas ---
 
 class LocationSchema(BaseModel):
-    latitude: float
-    longitude: float
+    latitude: float = Field(..., ge=-90.0, le=90.0)
+    longitude: float = Field(..., ge=-180.0, le=180.0)
     accuracy_m: Optional[float] = None
     source: str = "gnss" # gnss, network, fused
 
@@ -114,8 +114,8 @@ class EventIngestionRequest(BaseModel):
     location: LocationSchema
     speed_mps: Optional[float] = None
     event_type: Optional[str] = None # Optional if raw mode
-    confidence: Optional[float] = None
-    severity: Optional[float] = None
+    confidence: Optional[float] = Field(None, ge=0.0, le=1.0)
+    severity: Optional[float] = Field(None, ge=0.0, le=1.0)
     modality_sources: List[str] = ["imu"]
     model_output: Optional[ModelOutputSchema] = None
     sensor_data: Optional[Dict[str, Any]] = None # Raw IMU data window
@@ -151,7 +151,7 @@ class MLPredictionCreate(BaseModel):
     model_name: str
     model_version: str
     predicted_type: str
-    confidence: float
+    confidence: float = Field(..., ge=0.0, le=1.0)
     inference_location: str = "cloud" # edge, cloud
     fused_from: Optional[List[str]] = None
 
@@ -201,8 +201,8 @@ class RoadEventResponse(BaseModel):
 class TelemetryIngestionRequest(BaseModel):
     vehicle_id: str
     device_timestamp: datetime
-    latitude: float
-    longitude: float
+    latitude: float = Field(..., ge=-90.0, le=90.0)
+    longitude: float = Field(..., ge=-180.0, le=180.0)
     raw_payload: Dict[str, Any]
     label: Optional[str] = None
     linked_event_id: Optional[str] = None
@@ -211,8 +211,8 @@ class TelemetryIngestionRequest(BaseModel):
 # --- Manual Report Schemas ---
 
 class ReportCreate(BaseModel):
-    latitude: float
-    longitude: float
+    latitude: float = Field(..., ge=-90.0, le=90.0)
+    longitude: float = Field(..., ge=-180.0, le=180.0)
     description: Optional[str] = None
     event_id: Optional[str] = None
 

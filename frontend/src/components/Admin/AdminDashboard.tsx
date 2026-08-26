@@ -7,6 +7,7 @@ import {
 import { wsClient } from '../../services/websocket';
 import { useConfig } from '../../context/ConfigContext';
 import { useAuth } from '../../context/AuthContext';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   CheckCircle, Copy, Download, RefreshCw, Cpu,
   BarChart3, Filter, Check, X, ShieldAlert
@@ -14,7 +15,7 @@ import {
 
 export const AdminDashboard: React.FC = () => {
   const { role } = useAuth();
-  const [events, setEvents] = useState<RoadEvent[]>([]);
+  const queryClient = useQueryClient();
   const [devices, setDevices] = useState<Device[]>([]);
   const [analytics, setAnalytics] = useState<AnalyticsSummary | null>(null);
   const [selectedTab, setSelectedTab] = useState<'triage' | 'analytics' | 'devices'>('triage');
@@ -22,6 +23,12 @@ export const AdminDashboard: React.FC = () => {
 
   // Filter States
   const [statusFilter, setStatusFilter] = useState<string>('unverified');
+
+  // TanStack Query authoritative server-state for Admin triage events
+  const { data: events = [], refetch: refetchEvents } = useQuery<RoadEvent[]>({
+    queryKey: ['roadEvents', statusFilter],
+    queryFn: () => fetchRoadEvents(undefined, undefined, statusFilter === 'all' ? undefined : statusFilter),
+  });
 
   // Verification Modal State
   const [selectedEvent, setSelectedEvent] = useState<RoadEvent | null>(null);
@@ -35,33 +42,35 @@ export const AdminDashboard: React.FC = () => {
   const { getSeverityColor, getSeverityLabel, getEventTypeLabel } = useConfig();
 
   const loadData = () => {
-    fetchRoadEvents(undefined, undefined, statusFilter === 'all' ? undefined : statusFilter)
-      .then(setEvents)
-      .catch(console.error);
-
+    refetchEvents();
     fetchDevices().then(setDevices).catch(console.error);
     fetchAnalyticsSummary().then(setAnalytics).catch(console.error);
   };
 
   useEffect(() => {
-    loadData();
+    fetchDevices().then(setDevices).catch(console.error);
+    fetchAnalyticsSummary().then(setAnalytics).catch(console.error);
 
     // WebSocket listener for live updates
-    const unsubscribe = wsClient.addListener((type, data) => {
+    const unsubscribe = wsClient.addListener((type, _data) => {
       if (type === 'event_created' || type === 'event_updated') {
-        loadData();
+        queryClient.invalidateQueries({ queryKey: ['roadEvents'] });
+        fetchAnalyticsSummary().then(setAnalytics).catch(console.error);
       }
     });
 
     return () => unsubscribe();
-  }, [statusFilter]);
+  }, [queryClient]);
 
   // Handle Event Status Verification (Spec §5.1)
   const handleUpdateStatus = async (eventId: string, newStatus: string) => {
     setUpdating(true);
     try {
       const updated = await updateEventStatus(eventId, newStatus);
-      setEvents((prev) => prev.map((e) => (e.id === eventId ? updated : e)));
+      queryClient.setQueriesData<RoadEvent[]>({ queryKey: ['roadEvents'] }, (prev) => {
+        if (!prev) return [];
+        return prev.map((e) => (e.id === eventId ? updated : e));
+      });
       if (selectedEvent && selectedEvent.id === eventId) {
         setSelectedEvent(updated);
       }

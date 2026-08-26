@@ -78,6 +78,10 @@ async def get_route_safety(
     Annotates spatial hazard risk along a trip polyline.
     Strict Framing: Polyline stretches without official road_segment_id mapping are framed
     strictly as 'Hazard Location Intelligence Stretches', never as fabricated official RoadSegments.
+
+    Implementation Classification (Post-Audit Remediation):
+    - Current v1: Active hazard events are loaded from database and distance is evaluated in application layer.
+    - Future v2: PostGIS spatial predicates/indexes (ST_DWithin, ST_Buffer) should be used for larger-scale event-to-route matching.
     """
     polyline = req.polyline
 

@@ -1,4 +1,5 @@
 import uuid
+from datetime import timedelta
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -9,6 +10,7 @@ from app.schemas.domain_schemas import (
 )
 from app.auth.deps import get_current_user, require_role
 from app.services.storage_service import storage_service
+from app.config import settings
 
 router = APIRouter(prefix="/reports", tags=["Manual Driver Reporting"])
 
@@ -132,13 +134,15 @@ def confirm_report_media(
         return existing
 
     storage_url = storage_service.get_public_or_signed_download_url(media_id)
+    retention_expires = utc_now() + timedelta(days=settings.DEFAULT_MEDIA_RETENTION_DAYS)
     asset = MediaAsset(
         id=media_id,
         event_id=None,
         report_id=report.id,
         type="image",
         storage_url=storage_url,
-        access_tier="raw"
+        access_tier="raw",
+        retention_expires_at=retention_expires
     )
     db.add(asset)
     db.commit()

@@ -1,7 +1,7 @@
 import uuid
 import os
 from datetime import datetime, timezone
-from sqlalchemy import Column, String, Float, Integer, DateTime, ForeignKey, Text, JSON, Boolean, UniqueConstraint, Index
+from sqlalchemy import Column, String, Float, Integer, DateTime, ForeignKey, Text, JSON, Boolean, UniqueConstraint, Index, CheckConstraint
 from sqlalchemy.orm import relationship
 from app.database import Base
 
@@ -73,6 +73,10 @@ class RoadEvent(Base):
     __tablename__ = "road_events"
     __table_args__ = (
         UniqueConstraint("device_id", "device_event_id", name="uq_device_event_id"),
+        CheckConstraint("latitude >= -90.0 AND latitude <= 90.0", name="chk_roadevent_latitude"),
+        CheckConstraint("longitude >= -180.0 AND longitude <= 180.0", name="chk_roadevent_longitude"),
+        CheckConstraint("confidence >= 0.0 AND confidence <= 1.0", name="chk_roadevent_confidence"),
+        CheckConstraint("severity >= 0.0 AND severity <= 1.0", name="chk_roadevent_severity"),
     )
     
     id = Column(String, primary_key=True, default=lambda: generate_uuid("evt"))
@@ -104,6 +108,10 @@ class RoadEvent(Base):
 
 class Telemetry(Base):
     __tablename__ = "telemetry"
+    __table_args__ = (
+        CheckConstraint("latitude >= -90.0 AND latitude <= 90.0", name="chk_telemetry_latitude"),
+        CheckConstraint("longitude >= -180.0 AND longitude <= 180.0", name="chk_telemetry_longitude"),
+    )
     
     id = Column(String, primary_key=True, default=lambda: generate_uuid("tel"))
     device_id = Column(String, ForeignKey("devices.id"), nullable=False)
@@ -121,8 +129,8 @@ class MediaAsset(Base):
     __tablename__ = "media_assets"
     
     id = Column(String, primary_key=True, default=lambda: generate_uuid("med"))
-    event_id = Column(String, ForeignKey("road_events.id"), nullable=True)
-    report_id = Column(String, ForeignKey("reports.id"), nullable=True)
+    event_id = Column(String, ForeignKey("road_events.id", ondelete="CASCADE"), nullable=True)
+    report_id = Column(String, ForeignKey("reports.id", ondelete="CASCADE"), nullable=True)
     type = Column(String, nullable=False, default="image") # image, video
     storage_url = Column(String, nullable=False)
     captured_at = Column(DateTime, default=utc_now)
@@ -135,9 +143,12 @@ class MediaAsset(Base):
 
 class MLPrediction(Base):
     __tablename__ = "ml_predictions"
+    __table_args__ = (
+        CheckConstraint("confidence >= 0.0 AND confidence <= 1.0", name="chk_mlpred_confidence"),
+    )
     
     id = Column(String, primary_key=True, default=lambda: generate_uuid("pred"))
-    event_id = Column(String, ForeignKey("road_events.id"), nullable=False)
+    event_id = Column(String, ForeignKey("road_events.id", ondelete="CASCADE"), nullable=False)
     modality = Column(String, nullable=False, default="imu") # imu, camera, fused
     model_name = Column(String, nullable=False, default="imu-rf-v1")
     model_version = Column(String, nullable=False, default="1.0.0")
@@ -189,6 +200,10 @@ class GeoIndexBucket(Base):
 
 class Report(Base):
     __tablename__ = "reports"
+    __table_args__ = (
+        CheckConstraint("latitude >= -90.0 AND latitude <= 90.0", name="chk_report_latitude"),
+        CheckConstraint("longitude >= -180.0 AND longitude <= 180.0", name="chk_report_longitude"),
+    )
     
     id = Column(String, primary_key=True, default=lambda: generate_uuid("rpt"))
     user_id = Column(String, ForeignKey("users.id"), nullable=False)
