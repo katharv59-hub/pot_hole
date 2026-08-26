@@ -9,7 +9,8 @@ from app.models.domain import RoadEvent, Device, Vehicle, MLPrediction, MediaAss
 from app.schemas.domain_schemas import (
     EventIngestionRequest, EventIngestionResponse,
     RoadEventResponse, EventStatusPatch,
-    UploadUrlResponse, MediaAssetResponse
+    UploadUrlResponse, MediaAssetResponse,
+    MLPredictionCreate, MLPredictionResponse
 )
 from app.auth.deps import get_current_device, get_current_user, get_current_user_optional, require_role
 from app.services.event_service import (
@@ -397,3 +398,43 @@ def get_media_asset_by_id(
         raise HTTPException(status_code=403, detail="Not authorized to access another vehicle's raw media")
 
     return asset
+
+
+@router.get("/events/{event_id}/predictions", response_model=List[MLPredictionResponse])
+def get_event_predictions(
+    event_id: str,
+    db: Session = Depends(get_db)
+):
+    """Spec §12: Retrieve all ML predictions / multimodal evidence attached to a RoadEvent."""
+    event = db.query(RoadEvent).filter(RoadEvent.id == event_id).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Road event not found")
+    return db.query(MLPrediction).filter(MLPrediction.event_id == event_id).all()
+
+
+@router.post("/events/{event_id}/predictions", response_model=MLPredictionResponse)
+def add_event_prediction(
+    event_id: str,
+    pred_in: MLPredictionCreate,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_role(["admin", "authority"]))
+):
+    """Spec §12 & Phase 10: Attach an ML prediction/multimodal inference result to an existing RoadEvent."""
+    event = db.query(RoadEvent).filter(RoadEvent.id == event_id).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Road event not found")
+
+    prediction = MLPrediction(
+        event_id=event.id,
+        modality=pred_in.modality,
+        model_name=pred_in.model_name,
+        model_version=pred_in.model_version,
+        predicted_type=pred_in.predicted_type,
+        confidence=pred_in.confidence,
+        inference_location=pred_in.inference_location,
+        fused_from=pred_in.fused_from
+    )
+    db.add(prediction)
+    db.commit()
+    db.refresh(prediction)
+    return prediction

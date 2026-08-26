@@ -146,6 +146,15 @@ class MediaAssetResponse(BaseModel):
     class Config:
         from_attributes = True
 
+class MLPredictionCreate(BaseModel):
+    modality: str = "imu" # imu, camera, fused
+    model_name: str
+    model_version: str
+    predicted_type: str
+    confidence: float
+    inference_location: str = "cloud" # edge, cloud
+    fused_from: Optional[List[str]] = None
+
 class MLPredictionResponse(BaseModel):
     id: str
     modality: str
@@ -154,7 +163,7 @@ class MLPredictionResponse(BaseModel):
     predicted_type: str
     confidence: float
     inference_location: str
-    fused_from: Optional[List[str]]
+    fused_from: Optional[List[str]] = None
 
     class Config:
         from_attributes = True
