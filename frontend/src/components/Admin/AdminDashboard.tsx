@@ -2,20 +2,23 @@ import React, { useState, useEffect } from 'react';
 import { RoadEvent, Device, AnalyticsSummary } from '../../types';
 import {
   fetchRoadEvents, updateEventStatus, fetchDevices,
-  registerDevice, fetchAnalyticsSummary
+  registerDevice, fetchAnalyticsSummary, exportAnalyticsCsv
 } from '../../services/api';
 import { wsClient } from '../../services/websocket';
 import { useConfig } from '../../context/ConfigContext';
+import { useAuth } from '../../context/AuthContext';
 import {
   CheckCircle, Copy, Download, RefreshCw, Cpu,
   BarChart3, Filter, Check, X, ShieldAlert
 } from 'lucide-react';
 
 export const AdminDashboard: React.FC = () => {
+  const { role } = useAuth();
   const [events, setEvents] = useState<RoadEvent[]>([]);
   const [devices, setDevices] = useState<Device[]>([]);
   const [analytics, setAnalytics] = useState<AnalyticsSummary | null>(null);
   const [selectedTab, setSelectedTab] = useState<'triage' | 'analytics' | 'devices'>('triage');
+  const [exporting, setExporting] = useState(false);
 
   // Filter States
   const [statusFilter, setStatusFilter] = useState<string>('unverified');
@@ -285,24 +288,34 @@ export const AdminDashboard: React.FC = () => {
           <div className="glass-panel" style={{ padding: '24px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
               <h3 style={{ fontSize: '16px', color: '#fff' }}>Hazard Distribution & RBAC Catalog Export</h3>
-              <a
-                href="http://localhost:8000/api/v1/analytics/export"
-                download
+              <button
+                onClick={async () => {
+                  setExporting(true);
+                  try {
+                    await exportAnalyticsCsv();
+                  } catch (err) {
+                    alert('Export failed. Please check permissions.');
+                  } finally {
+                    setExporting(false);
+                  }
+                }}
+                disabled={exporting}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
                   gap: '6px',
                   padding: '8px 16px',
                   borderRadius: '8px',
+                  border: 'none',
                   background: 'var(--accent-primary)',
                   color: '#fff',
-                  textDecoration: 'none',
+                  cursor: 'pointer',
                   fontWeight: 600,
                   fontSize: '13px'
                 }}
               >
-                <Download size={16} /> Export Catalog CSV
-              </a>
+                <Download size={16} /> {exporting ? 'Exporting...' : 'Export Catalog CSV'}
+              </button>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
@@ -343,49 +356,62 @@ export const AdminDashboard: React.FC = () => {
       {/* --- TAB 3: DEVICE & FLEET MANAGEMENT --- */}
       {selectedTab === 'devices' && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '24px' }}>
-          {/* Register Device Form */}
-          <div className="glass-panel" style={{ padding: '20px' }}>
-            <h3 style={{ fontSize: '16px', marginBottom: '12px', color: '#fff' }}>Register New Fleet Hardware</h3>
-            <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '16px' }}>Spec §5.1: Issues one-time provisioning secret out-of-band.</p>
+          {/* Register Device Form or Authority View-Only Notice */}
+          {role === 'admin' ? (
+            <div className="glass-panel" style={{ padding: '20px' }}>
+              <h3 style={{ fontSize: '16px', marginBottom: '12px', color: '#fff' }}>Register New Fleet Hardware</h3>
+              <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '16px' }}>Spec §5.1: Issues one-time provisioning secret out-of-band.</p>
 
-            <form onSubmit={handleRegisterDeviceSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-              <div>
-                <label style={{ fontSize: '12px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Hardware Type</label>
-                <select
-                  value={newHwType}
-                  onChange={(e) => setNewHwType(e.target.value)}
-                  style={{ width: '100%', padding: '8px', borderRadius: '6px', background: '#1f2937', border: '1px solid var(--border-color)', color: '#fff', fontSize: '13px' }}
-                >
-                  <option value="ESP32">ESP32 + IMU + GPS</option>
-                  <option value="edge-ai">Edge-AI Jetson Computer</option>
-                  <option value="other">Other Hardware</option>
-                </select>
+              <form onSubmit={handleRegisterDeviceSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <div>
+                  <label style={{ fontSize: '12px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Hardware Type</label>
+                  <select
+                    value={newHwType}
+                    onChange={(e) => setNewHwType(e.target.value)}
+                    style={{ width: '100%', padding: '8px', borderRadius: '6px', background: '#1f2937', border: '1px solid var(--border-color)', color: '#fff', fontSize: '13px' }}
+                  >
+                    <option value="ESP32">ESP32 + IMU + GPS</option>
+                    <option value="edge-ai">Edge-AI Jetson Computer</option>
+                    <option value="other">Other Hardware</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ fontSize: '12px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Assign Initial Vehicle ID (Optional)</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. veh_1183"
+                    value={newVehicleId}
+                    onChange={(e) => setNewVehicleId(e.target.value)}
+                    style={{ width: '100%', padding: '8px', borderRadius: '6px', background: '#1f2937', border: '1px solid var(--border-color)', color: '#fff', fontSize: '13px' }}
+                  />
+                </div>
+
+                <button type="submit" style={{ padding: '10px', borderRadius: '6px', border: 'none', background: 'var(--accent-primary)', color: '#fff', fontWeight: 600, cursor: 'pointer', marginTop: '8px' }}>
+                  Register Hardware Device
+                </button>
+              </form>
+
+              {generatedSecret && (
+                <div style={{ marginTop: '16px', padding: '12px', borderRadius: '8px', background: 'rgba(34, 197, 94, 0.12)', border: '1px solid rgba(34, 197, 94, 0.3)' }}>
+                  <span style={{ fontSize: '12px', fontWeight: 700, color: '#4ade80', display: 'block' }}>Provisioning Secret Generated:</span>
+                  <code style={{ fontSize: '11px', color: '#fff', wordBreak: 'break-all', display: 'block', margin: '4px 0' }}>{generatedSecret.secret}</code>
+                  <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Flash this secret into device firmware once.</span>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="glass-panel" style={{ padding: '20px' }}>
+              <h3 style={{ fontSize: '16px', marginBottom: '12px', color: '#fff' }}>Fleet Device Registry</h3>
+              <p style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '16px' }}>
+                Authority View-Only Mode: Hardware registration and cryptographic provisioning require Admin privileges.
+              </p>
+              <div style={{ padding: '12px', borderRadius: '8px', background: 'rgba(99, 102, 241, 0.1)', border: '1px solid rgba(99, 102, 241, 0.3)' }}>
+                <span style={{ fontSize: '12px', color: '#a5b4fc' }}>Active fleet telemetry and device health can be monitored on the right.</span>
               </div>
+            </div>
+          )}
 
-              <div>
-                <label style={{ fontSize: '12px', color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Assign Initial Vehicle ID (Optional)</label>
-                <input
-                  type="text"
-                  placeholder="e.g. veh_1183"
-                  value={newVehicleId}
-                  onChange={(e) => setNewVehicleId(e.target.value)}
-                  style={{ width: '100%', padding: '8px', borderRadius: '6px', background: '#1f2937', border: '1px solid var(--border-color)', color: '#fff', fontSize: '13px' }}
-                />
-              </div>
-
-              <button type="submit" style={{ padding: '10px', borderRadius: '6px', border: 'none', background: 'var(--accent-primary)', color: '#fff', fontWeight: 600, cursor: 'pointer', marginTop: '8px' }}>
-                Register Hardware Device
-              </button>
-            </form>
-
-            {generatedSecret && (
-              <div style={{ marginTop: '16px', padding: '12px', borderRadius: '8px', background: 'rgba(34, 197, 94, 0.12)', border: '1px solid rgba(34, 197, 94, 0.3)' }}>
-                <span style={{ fontSize: '12px', fontWeight: 700, color: '#4ade80', display: 'block' }}>Provisioning Secret Generated:</span>
-                <code style={{ fontSize: '11px', color: '#fff', wordBreak: 'break-all', display: 'block', margin: '4px 0' }}>{generatedSecret.secret}</code>
-                <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>Flash this secret into device firmware once.</span>
-              </div>
-            )}
-          </div>
 
           {/* Registered Devices List */}
           <div className="glass-panel" style={{ padding: '20px' }}>

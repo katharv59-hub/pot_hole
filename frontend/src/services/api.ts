@@ -102,3 +102,15 @@ export const fetchAnalyticsSummary = async (): Promise<AnalyticsSummary> => {
   const res = await api.get<AnalyticsSummary>('/analytics/summary');
   return res.data;
 };
+
+export const exportAnalyticsCsv = async (): Promise<void> => {
+  const res = await api.get('/analytics/export', { responseType: 'blob' });
+  const url = window.URL.createObjectURL(new Blob([res.data], { type: 'text/csv' }));
+  const link = document.createElement('a');
+  link.href = url;
+  link.setAttribute('download', 'roadsentinel_hazards.csv');
+  document.body.appendChild(link);
+  link.click();
+  link.parentNode?.removeChild(link);
+  window.URL.revokeObjectURL(url);
+};
