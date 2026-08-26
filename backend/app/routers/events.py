@@ -225,7 +225,7 @@ async def update_event_status(
     db: Session = Depends(get_db),
     admin: User = Depends(require_role(["admin", "authority"]))
 ):
-    """Spec §5.1: Admin/Authority verification workflow."""
+    """Spec §5.1 & §6: Admin/Authority verification workflow."""
     event = db.query(RoadEvent).filter(RoadEvent.id == event_id).first()
     if not event:
         raise HTTPException(status_code=404, detail="Road event not found")
@@ -241,6 +241,23 @@ async def update_event_status(
         "latitude": event.latitude,
         "longitude": event.longitude
     })
+    return event
+
+
+@router.delete("/events/{event_id}", response_model=RoadEventResponse)
+@router.delete("/admin/events/{event_id}", response_model=RoadEventResponse)
+def delete_road_event(
+    event_id: str,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_role(["admin"]))
+):
+    """Spec §6: Admin-only event deletion (soft-delete)."""
+    event = db.query(RoadEvent).filter(RoadEvent.id == event_id).first()
+    if not event:
+        raise HTTPException(status_code=404, detail="Road event not found")
+    event.status = "resolved"
+    db.commit()
+    db.refresh(event)
     return event
 
 
@@ -265,7 +282,6 @@ def get_event_media(
         if current_user.role in ["admin", "authority"]:
             is_owner_or_admin = True
         else:
-            # Check if current user is the owner of the vehicle that reported this event
             veh = db.query(Vehicle).filter(Vehicle.id == event.vehicle_id).first()
             if veh and veh.owner_id == current_user.id:
                 is_owner_or_admin = True
@@ -283,11 +299,16 @@ def get_event_media_upload_url(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Spec §11 & §13A: Generate pre-signed URL slot for event media evidence."""
+    """Spec §6, §11 & §13A: Generate pre-signed URL slot for event media. Driver (own vehicle) or Admin."""
     event = db.query(RoadEvent).filter(RoadEvent.id == event_id).first()
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
         
+    if current_user.role != "admin":
+        veh = db.query(Vehicle).filter(Vehicle.id == event.vehicle_id).first()
+        if not veh or veh.owner_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Not authorized to attach media to this event")
+
     media_id = f"med_evt_{uuid.uuid4().hex[:8]}"
     upload_info = storage_service.generate_presigned_upload_url(media_id)
     return UploadUrlResponse(media_id=media_id, upload_url=upload_info["upload_url"])
@@ -301,13 +322,18 @@ def confirm_event_media(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Spec §11 & §13A: Confirm event media upload. Retry-safe, authenticated, mutually exclusive parent."""
+    """Spec §6, §11 & §13A: Confirm event media upload. Driver (own vehicle) or Admin."""
     event = db.query(RoadEvent).filter(RoadEvent.id == event_id).first()
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
 
-    # Only admin/authority can confirm media directly as 'processed'; drivers default to 'raw'
-    validated_tier = access_tier if current_user.role in ["admin", "authority"] else "raw"
+    if current_user.role != "admin":
+        veh = db.query(Vehicle).filter(Vehicle.id == event.vehicle_id).first()
+        if not veh or veh.owner_id != current_user.id:
+            raise HTTPException(status_code=403, detail="Not authorized to confirm media for this event")
+
+    # Only admin can confirm media directly as 'processed'; drivers default to 'raw'
+    validated_tier = access_tier if current_user.role == "admin" else "raw"
 
     # Retry-safe: check if asset already confirmed
     existing = db.query(MediaAsset).filter(MediaAsset.id == media_id).first()

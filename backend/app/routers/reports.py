@@ -96,12 +96,12 @@ def get_report_media_upload_url(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Spec §11.1 & Phase 9: Report-specific pre-signed upload URL."""
+    """Spec §6 & §11.1: Report-specific pre-signed upload URL (Driver own report, or Admin)."""
     report = db.query(Report).filter(Report.id == report_id).first()
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
         
-    if report.user_id != current_user.id and current_user.role not in ["admin", "authority"]:
+    if report.user_id != current_user.id and current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Not authorized to attach media to this report")
 
     media_id = f"med_rpt_{uuid.uuid4().hex[:8]}"
@@ -116,12 +116,12 @@ def confirm_report_media(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """Spec §11.1 & Phase 9: Confirm media asset upload (retry-safe & user-authorized)."""
+    """Spec §6 & §11.1: Confirm media asset upload (Driver own report, or Admin)."""
     report = db.query(Report).filter(Report.id == report_id).first()
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
 
-    if report.user_id != current_user.id and current_user.role not in ["admin", "authority"]:
+    if report.user_id != current_user.id and current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Not authorized to confirm media for this report")
 
     # Phase 9: Make confirmation retry-safe by checking existing asset
