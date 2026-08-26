@@ -90,11 +90,12 @@ async def get_route_safety(
     if not polyline or len(polyline) < 2:
         raise HTTPException(status_code=400, detail="Must provide valid polyline or origin & destination search parameters")
 
-    # Query active spatial hazards along path
+    # Query active spatial hazards along path (exclude duplicates / resolved)
     active_events = db.query(RoadEvent).filter(RoadEvent.status.in_(["unverified", "verified"])).all()
 
     matched_hazards = []
     total_penalty = 0.0
+    mapped_segment_ids = set()
 
     for pt in polyline:
         lat, lon = pt[0], pt[1]
@@ -105,31 +106,57 @@ async def get_route_safety(
                     matched_hazards.append(evt)
                     penalty = (evt.severity * 25.0) * (0.8 + 0.2 * evt.confidence)
                     total_penalty += penalty
+                    if evt.road_segment_id:
+                        mapped_segment_ids.add(evt.road_segment_id)
 
-    overall_score = max(0.0, min(100.0, round(100.0 - total_penalty, 1)))
-
-    # Phase 8: Do NOT fabricate official RoadSegment objects.
-    # Framed as Hazard Location Intelligence Stretches.
-    segment_stretches = []
-    for i in range(len(polyline) - 1):
-        segment_stretches.append({
-            "stretch_index": i,
-            "start_point": polyline[i],
-            "end_point": polyline[i+1],
-            "is_road_network_scored": False, # Official segment score requires backfilled road_segment_id
-            "framing_label": "Hazard Location Intelligence Stretch",
-            "hazard_density_penalty": round(total_penalty / (len(polyline) - 1), 2)
-        })
+    # Check if any legitimate RoadSegment entities are mapped along this route
+    official_segments = []
+    if mapped_segment_ids:
+        from app.models.domain import RoadSegment
+        official_segments = db.query(RoadSegment).filter(RoadSegment.id.in_(mapped_segment_ids)).all()
 
     hazards_response = [RoadEventResponse.model_validate(h) for h in matched_hazards]
 
-    # No official RoadSegment mapping exists → overall_safety_score is null.
-    # Hazard density penalty is still available per-stretch for informational purposes.
-    return RouteSafetyResponse(
-        overall_safety_score=None,
-        scored_segments_count=0,
-        unscored_stretches_count=len(polyline) - 1,
-        detected_hazards_on_route=hazards_response,
-        segment_scores=segment_stretches,
-        scoring_available=False
-    )
+    segment_stretches = []
+    if official_segments:
+        # Scenario B: Official RoadSegments exist
+        avg_score = round(sum(s.safety_score for s in official_segments) / len(official_segments), 1)
+        for i in range(len(polyline) - 1):
+            segment_stretches.append({
+                "stretch_index": i,
+                "start_point": polyline[i],
+                "end_point": polyline[i+1],
+                "is_road_network_scored": True,
+                "framing_label": "Official Road Network Segment",
+                "segment_score": avg_score
+            })
+
+        return RouteSafetyResponse(
+            overall_safety_score=avg_score,
+            scored_segments_count=len(official_segments),
+            unscored_stretches_count=max(0, len(polyline) - 1 - len(official_segments)),
+            detected_hazards_on_route=hazards_response,
+            segment_scores=segment_stretches,
+            scoring_available=True
+        )
+    else:
+        # Scenario A: No official RoadSegment mapping exists -> overall_safety_score is None
+        # Framed honestly as Hazard Location Intelligence Stretches
+        for i in range(len(polyline) - 1):
+            segment_stretches.append({
+                "stretch_index": i,
+                "start_point": polyline[i],
+                "end_point": polyline[i+1],
+                "is_road_network_scored": False,
+                "framing_label": "Hazard Location Intelligence Stretch",
+                "hazard_density_penalty": round(total_penalty / (len(polyline) - 1), 2)
+            })
+
+        return RouteSafetyResponse(
+            overall_safety_score=None,
+            scored_segments_count=0,
+            unscored_stretches_count=len(polyline) - 1,
+            detected_hazards_on_route=hazards_response,
+            segment_scores=segment_stretches,
+            scoring_available=False
+        )
