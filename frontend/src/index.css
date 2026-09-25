@@ -1,24 +1,92 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@400;500;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
 @import 'mapbox-gl/dist/mapbox-gl.css';
 
+/* ==========================================================================
+   ROADSentinel Design System Tokens (v0.4 Production Operational Theme)
+   ========================================================================== */
+
 :root {
-  --bg-primary: #0b0f19;
-  --bg-secondary: #111827;
-  --bg-card: rgba(17, 24, 39, 0.75);
-  --bg-card-hover: rgba(31, 41, 55, 0.85);
-  --border-color: rgba(255, 255, 255, 0.1);
-  --border-highlight: rgba(99, 102, 241, 0.3);
-  --text-primary: #f9fafb;
-  --text-secondary: #9ca3af;
-  --text-muted: #6b7280;
+  /* Surfaces & Canvas */
+  --surface-app: #080c15;
+  --surface-workspace: #0d1322;
+  --surface-panel: #131b2e;
+  --surface-panel-hover: #1a253e;
+  --surface-card: rgba(19, 27, 46, 0.82);
+  --surface-card-hover: rgba(26, 37, 62, 0.92);
+  --surface-overlay: rgba(15, 23, 42, 0.96);
+  --surface-modal: #101728;
+  --surface-input: #151e33;
+  --surface-input-focus: #18223a;
+
+  /* Borders & Dividers */
+  --border-subtle: rgba(255, 255, 255, 0.07);
+  --border-default: rgba(255, 255, 255, 0.12);
+  --border-strong: rgba(255, 255, 255, 0.22);
+  --border-focus: #6366f1;
+  --border-glow: rgba(99, 102, 241, 0.4);
+
+  /* Typography Colors */
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --text-tertiary: #64748b;
+  --text-disabled: #475569;
+  --text-inverse: #080c15;
+  --text-accent: #818cf8;
+
+  /* Brand Accents */
   --accent-primary: #6366f1;
   --accent-hover: #4f46e5;
+  --accent-cyan: #06b6d4;
   --accent-glow: rgba(99, 102, 241, 0.35);
+
+  /* Semantic Severity System (Explicit State Communication) */
+  --severity-clear: #10b981;
   --severity-low: #22c55e;
-  --severity-med: #eab308;
+  --severity-medium: #f59e0b;
   --severity-high: #f97316;
   --severity-critical: #ef4444;
+
+  /* Semantic Status Tokens */
+  --status-verified: #3b82f6;
+  --status-resolved: #6366f1;
+  --status-unverified: #eab308;
+  --status-duplicate: #8b5cf6;
+  --status-active: #10b981;
+  --status-inactive: #64748b;
+
+  /* Spacing Scale (4, 8, 12, 16, 20, 24, 32, 40, 48) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+
+  /* Radius Scale */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
+  --radius-pill: 9999px;
+
+  /* Shadow & Elevation Hierarchy */
+  --shadow-subtle: 0 2px 8px rgba(0, 0, 0, 0.25);
+  --shadow-elevated: 0 10px 30px rgba(0, 0, 0, 0.45);
+  --shadow-overlay: 0 20px 50px rgba(0, 0, 0, 0.7);
+
+  /* Transitions & Motion */
+  --motion-fast: 150ms cubic-bezier(0.16, 1, 0.3, 1);
+  --motion-normal: 250ms cubic-bezier(0.16, 1, 0.3, 1);
+  --motion-smooth: 350ms cubic-bezier(0.16, 1, 0.3, 1);
 }
+
+/* ==========================================================================
+   Global Reset & Base Typography
+   ========================================================================== */
 
 * {
   box-sizing: border-box;
@@ -27,46 +95,163 @@
 }
 
 body {
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
-  background-color: var(--bg-primary);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background-color: var(--surface-app);
   color: var(--text-primary);
   min-height: 100vh;
   overflow-x: hidden;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 h1, h2, h3, h4, h5, h6 {
   font-family: 'Outfit', sans-serif;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.025em;
+  color: var(--text-primary);
+  font-weight: 700;
 }
 
-/* Glassmorphism Classes */
-.glass-panel {
-  background: var(--bg-card);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid var(--border-color);
-  border-radius: 12px;
-  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+/* Tabular Numerals for Telemetry, Coordinates, Timestamps & Measurements */
+.font-mono, .telemetry-numeric, code, pre {
+  font-family: 'JetBrains Mono', monospace;
+  font-variant-numeric: tabular-nums;
 }
 
-.glass-panel-interactive {
-  background: var(--bg-card);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid var(--border-color);
-  border-radius: 12px;
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+/* ==========================================================================
+   Surface & Panel Utility Primitives
+   ========================================================================== */
+
+.rs-panel {
+  background: var(--surface-card);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-elevated);
 }
 
-.glass-panel-interactive:hover {
-  background: var(--bg-card-hover);
-  border-color: var(--border-highlight);
+.rs-panel-interactive {
+  background: var(--surface-card);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-subtle);
+  transition: all var(--motion-normal);
+}
+
+.rs-panel-interactive:hover {
+  background: var(--surface-card-hover);
+  border-color: var(--border-strong);
   transform: translateY(-2px);
-  box-shadow: 0 12px 40px 0 rgba(99, 102, 241, 0.15);
+  box-shadow: var(--shadow-elevated);
 }
 
-/* Custom Mapbox GL Map Theme Overrides */
+.rs-hud-card {
+  background: var(--surface-overlay);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-overlay);
+}
+
+/* ==========================================================================
+   Severity Badges & Presentation Hierarchy
+   ========================================================================== */
+
+.severity-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.severity-pill-clear {
+  background: rgba(16, 185, 129, 0.12);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.severity-pill-low {
+  background: rgba(34, 197, 94, 0.12);
+  color: #4ade80;
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.severity-pill-medium {
+  background: rgba(245, 158, 11, 0.12);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.severity-pill-high {
+  background: rgba(249, 115, 22, 0.14);
+  color: #fb923c;
+  border: 1px solid rgba(249, 115, 22, 0.35);
+}
+
+.severity-pill-critical {
+  background: rgba(239, 68, 68, 0.16);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.4);
+}
+
+/* Restrained Critical Pulse Indicator */
+@keyframes critical-radar-pulse {
+  0% { transform: scale(0.9); opacity: 0.9; }
+  70% { transform: scale(2.0); opacity: 0; }
+  100% { transform: scale(2.0); opacity: 0; }
+}
+
+/* Global Spinner (Button loading, LoadingState) */
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.critical-pulse-ring {
+  position: absolute;
+  inset: -6px;
+  border-radius: 50%;
+  border: 2px solid var(--severity-critical);
+  animation: critical-radar-pulse 2.2s cubic-bezier(0.24, 0, 0.38, 1) infinite;
+  pointer-events: none;
+}
+
+/* Live Operational Status Pulse */
+.live-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background-color: var(--status-active);
+  position: relative;
+  display: inline-block;
+}
+
+.live-status-dot::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  background-color: var(--status-active);
+  animation: live-ping 1.8s cubic-bezier(0, 0, 0.2, 1) infinite;
+  opacity: 0.75;
+}
+
+@keyframes live-ping {
+  75%, 100% { transform: scale(2.5); opacity: 0; }
+}
+
+/* ==========================================================================
+   Mapbox GL Overrides & Layer Standards
+   ========================================================================== */
+
 .mapboxgl-map {
   font-family: 'Inter', sans-serif !important;
   width: 100%;
@@ -74,91 +259,105 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .mapboxgl-popup-content {
-  background: rgba(17, 24, 39, 0.95) !important;
-  color: #f9fafb !important;
-  backdrop-filter: blur(12px) !important;
-  border: 1px solid rgba(255, 255, 255, 0.15) !important;
-  border-radius: 12px !important;
-  padding: 12px !important;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5) !important;
+  background: var(--surface-overlay) !important;
+  color: var(--text-primary) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+  border: 1px solid var(--border-default) !important;
+  border-radius: var(--radius-md) !important;
+  padding: var(--space-4) !important;
+  box-shadow: var(--shadow-overlay) !important;
+  min-width: 240px;
 }
 
 .mapboxgl-popup-anchor-top .mapboxgl-popup-tip {
-  border-bottom-color: rgba(17, 24, 39, 0.95) !important;
+  border-bottom-color: var(--surface-overlay) !important;
 }
 .mapboxgl-popup-anchor-bottom .mapboxgl-popup-tip {
-  border-top-color: rgba(17, 24, 39, 0.95) !important;
+  border-top-color: var(--surface-overlay) !important;
 }
 .mapboxgl-popup-anchor-left .mapboxgl-popup-tip {
-  border-right-color: rgba(17, 24, 39, 0.95) !important;
+  border-right-color: var(--surface-overlay) !important;
 }
 .mapboxgl-popup-anchor-right .mapboxgl-popup-tip {
-  border-left-color: rgba(17, 24, 39, 0.95) !important;
+  border-left-color: var(--surface-overlay) !important;
 }
+
 .mapboxgl-popup-close-button {
-  color: #9ca3af !important;
-  padding: 4px 8px !important;
-  font-size: 16px !important;
+  color: var(--text-secondary) !important;
+  padding: 6px 10px !important;
+  font-size: 18px !important;
 }
 .mapboxgl-popup-close-button:hover {
-  color: #ffffff !important;
+  color: var(--text-primary) !important;
   background: transparent !important;
 }
 
-/* Custom Pulsing Hazard Markers */
+/* Custom Marker Styling */
 .custom-mapbox-marker {
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  transition: transform var(--motion-fast);
 }
 .custom-mapbox-marker:hover {
-  transform: scale(1.15);
+  transform: scale(1.2) translateY(-2px);
+  z-index: 50;
 }
 
-/* Severity Color Badges */
-.badge-severity-low {
-  background: rgba(34, 197, 94, 0.15);
-  color: #4ade80;
-  border: 1px solid rgba(34, 197, 94, 0.3);
+/* ==========================================================================
+   Form Controls & Interactive Elements
+   ========================================================================== */
+
+input, select, textarea {
+  font-family: inherit;
+  color: var(--text-primary);
+  background-color: var(--surface-input);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  transition: border-color var(--motion-fast), box-shadow var(--motion-fast);
 }
 
-.badge-severity-medium {
-  background: rgba(234, 179, 8, 0.15);
-  color: #fde047;
-  border: 1px solid rgba(234, 179, 8, 0.3);
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  background-color: var(--surface-input-focus);
+  border-color: var(--border-focus) !important;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.25) !important;
 }
 
-.badge-severity-high {
-  background: rgba(249, 115, 22, 0.15);
-  color: #fb923c;
-  border: 1px solid rgba(249, 115, 22, 0.3);
+input::placeholder, textarea::placeholder {
+  color: var(--text-tertiary);
 }
 
-.badge-severity-critical {
-  background: rgba(239, 68, 68, 0.15);
-  color: #f87171;
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  animation: pulse-critical 2s infinite;
+/* Accessibility Focus Ring (Keyboard Navigation) */
+:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
 }
 
-@keyframes pulse-critical {
-  0%, 100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
-  50% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+/* Reduced Motion Preference Support */
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
-/* Scrollbar Customization */
+/* Custom Scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: var(--bg-primary);
+  background: var(--surface-app);
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.15);
-  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius-xs);
 }
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(99, 102, 241, 0.5);

@@ -56,7 +56,7 @@ const MainApp: React.FC = () => {
   }, [token, queryClient]);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', width: '100vw', backgroundColor: 'var(--bg-primary)' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', width: '100vw', backgroundColor: 'var(--surface-app)' }}>
       <Navbar wsConnected={wsConnected} />
       <main style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
         {role === 'driver' ? (

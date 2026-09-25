@@ -4,6 +4,7 @@ import type { Feature, LineString } from 'geojson';
 import { RoadEvent } from '../../types';
 import { useConfig } from '../../context/ConfigContext';
 import { Key } from 'lucide-react';
+import { Button, Panel } from '../ui';
 
 interface InteractiveMapProps {
   events: RoadEvent[];
@@ -39,12 +40,10 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
   const isLoadedRef = useRef<boolean>(false);
 
   const [mapStyle, setMapStyle] = useState<StyleKey>('dark');
-  const [tokenMissing, setTokenMissing] = useState<boolean>(false);
-
   const { getSeverityColor, getSeverityLabel, getEventTypeLabel } = useConfig();
 
-  // Retrieve token from Vite environment
   const mapboxToken = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN || '';
+  const tokenMissing = !mapboxToken;
 
   // Convert incoming [lat, lon] center to Mapbox [lng, lat]
   const mapboxCenter: [number, number] =
@@ -121,11 +120,9 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
   // Initialize Mapbox Map Instance
   useEffect(() => {
     if (!mapboxToken) {
-      setTokenMissing(true);
       return;
     }
 
-    setTokenMissing(false);
     mapboxgl.accessToken = mapboxToken;
 
     if (!mapContainerRef.current || mapRef.current) return;
@@ -195,33 +192,37 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
       // Create Custom Marker DOM Element
       const el = document.createElement('div');
       el.className = 'custom-mapbox-marker';
-      el.style.width = isSelected ? '32px' : '24px';
-      el.style.height = isSelected ? '32px' : '24px';
+      el.style.width = isSelected ? '30px' : '22px';
+      el.style.height = isSelected ? '30px' : '22px';
       el.style.borderRadius = '50%';
       el.style.backgroundColor = color;
-      el.style.border = '2px solid #ffffff';
-      el.style.boxShadow = `0 0 15px ${color}`;
+      el.style.border = isSelected ? '3px solid #ffffff' : '2px solid rgba(255, 255, 255, 0.9)';
+      el.style.boxShadow = isSelected ? `0 0 18px ${color}` : `0 0 10px ${color}88`;
       el.style.display = 'flex';
       el.style.alignItems = 'center';
       el.style.justifyContent = 'center';
       el.style.color = '#ffffff';
-      el.style.fontWeight = 'bold';
-      el.style.fontSize = '11px';
+      el.style.fontWeight = '700';
+      el.style.fontSize = '10px';
       el.style.cursor = 'pointer';
 
       if (isCritical) {
-        el.style.animation = 'pulse-critical 2s infinite';
+        const pulseRing = document.createElement('div');
+        pulseRing.className = 'critical-pulse-ring';
+        el.appendChild(pulseRing);
       }
 
       if (evt.corroboration_count > 1) {
-        el.innerText = String(evt.corroboration_count);
+        const span = document.createElement('span');
+        span.innerText = String(evt.corroboration_count);
+        el.appendChild(span);
       }
 
       // Create Popup HTML
       const popupHtml = `
-        <div style="padding: 4px; min-width: 220px; font-family: 'Inter', sans-serif;">
-          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
-            <span style="font-weight: 700; font-size: 14px; color: #ffffff;">${getEventTypeLabel(evt.event_type)}</span>
+        <div style="padding: 2px; min-width: 210px; font-family: 'Inter', sans-serif;">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+            <span style="font-weight: 700; font-size: 13px; color: var(--text-primary); font-family: 'Outfit', sans-serif;">${getEventTypeLabel(evt.event_type)}</span>
             <span style="
               font-size: 10px;
               font-weight: 700;
@@ -233,31 +234,32 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
             ">${getSeverityLabel(evt.severity).toUpperCase()} (${(evt.severity * 100).toFixed(0)}%)</span>
           </div>
           
-          <div style="font-size: 11px; color: #9ca3af; margin-bottom: 8px; line-height: 1.5;">
-            <div>Status: <b style="color: #f3f4f6;">${evt.status.toUpperCase()}</b></div>
-            <div>Confidence: <b style="color: #818cf8;">${(evt.confidence * 100).toFixed(0)}%</b></div>
-            <div>Corroborated: <b style="color: #4ade80;">${evt.corroboration_count} vehicle(s)</b></div>
-            <div>Modality: <b style="color: #c084fc;">${(evt.modality_sources || []).join(', ')}</b></div>
+          <div style="font-size: 11px; color: var(--text-secondary); margin-bottom: 8px; line-height: 1.6;">
+            <div>Status: <b style="color: var(--text-primary); font-variant-numeric: tabular-nums;">${evt.status.toUpperCase()}</b></div>
+            <div>Confidence: <b style="color: var(--accent-cyan); font-variant-numeric: tabular-nums;">${(evt.confidence * 100).toFixed(0)}%</b></div>
+            <div>Corroborated: <b style="color: var(--severity-low); font-variant-numeric: tabular-nums;">${evt.corroboration_count} vehicle(s)</b></div>
+            <div>Sources: <b style="color: var(--text-primary);">${(evt.modality_sources || []).join(', ')}</b></div>
           </div>
 
           <div style="
             font-size: 10px;
-            padding: 4px 8px;
+            font-family: 'JetBrains Mono', monospace;
+            padding: 4px 6px;
             border-radius: 4px;
-            background: rgba(255, 255, 255, 0.05);
-            color: #9ca3af;
-            border: 1px dashed rgba(255,255,255,0.15);
+            background: rgba(255, 255, 255, 0.04);
+            color: var(--text-tertiary);
+            border: 1px solid var(--border-subtle);
           ">
-            🗺️ Lat: ${evt.latitude.toFixed(4)}, Lon: ${evt.longitude.toFixed(4)}
+            LOC: ${evt.latitude.toFixed(5)}, ${evt.longitude.toFixed(5)}
           </div>
         </div>
       `;
 
       const popup = new mapboxgl.Popup({
-        offset: 25,
+        offset: 22,
         closeButton: true,
         closeOnClick: false,
-        maxWidth: '300px',
+        maxWidth: '320px',
       }).setHTML(popupHtml);
 
       const marker = new mapboxgl.Marker({ element: el })
@@ -283,179 +285,125 @@ export const InteractiveMap: React.FC<InteractiveMapProps> = ({
           position: 'relative',
           width: '100%',
           height: '100%',
-          borderRadius: '12px',
+          borderRadius: 'var(--radius-lg)',
           overflow: 'hidden',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          background: '#0b0f19',
+          background: 'var(--surface-app)',
           border: '1px dashed rgba(239, 68, 68, 0.4)',
         }}
       >
-        <div
-          className="glass-panel"
+        <Panel
+          level="card"
           style={{
-            padding: '24px 32px',
+            padding: 'var(--space-6) var(--space-8)',
             maxWidth: '480px',
             textAlign: 'center',
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
-            gap: '12px',
+            gap: 'var(--space-3)',
           }}
         >
           <div
             style={{
-              width: '48px',
-              height: '48px',
+              width: '44px',
+              height: '44px',
               borderRadius: '50%',
               background: 'rgba(239, 68, 68, 0.15)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
-              color: '#ef4444',
+              color: 'var(--severity-critical)',
             }}
           >
-            <Key size={24} />
+            <Key size={22} />
           </div>
-          <h3 style={{ fontSize: '16px', fontWeight: 700, color: '#f9fafb' }}>
+          <h3 style={{ fontSize: '15px', fontWeight: 700, color: 'var(--text-primary)' }}>
             Mapbox GL Access Token Required
           </h3>
-          <p style={{ fontSize: '13px', color: '#9ca3af', lineHeight: 1.5 }}>
-            To render the ROADSentinel v0.4 spatial map, please configure{' '}
-            <code style={{ background: 'rgba(255,255,255,0.1)', padding: '2px 6px', borderRadius: '4px', color: '#a5b4fc' }}>
+          <p style={{ fontSize: '12px', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+            To render the ROADSentinel spatial map, configure{' '}
+            <code style={{ background: 'rgba(255,255,255,0.08)', padding: '2px 6px', borderRadius: '4px', color: 'var(--accent-cyan)' }}>
               VITE_MAPBOX_ACCESS_TOKEN
             </code>{' '}
-            in your <code style={{ color: '#a5b4fc' }}>frontend/.env</code> file.
+            in your <code style={{ color: 'var(--accent-cyan)' }}>frontend/.env</code> file.
           </p>
-          <div
-            style={{
-              fontSize: '11px',
-              color: '#6b7280',
-              marginTop: '4px',
-              borderTop: '1px solid rgba(255,255,255,0.1)',
-              paddingTop: '8px',
-              width: '100%',
-            }}
-          >
-            Engine: Mapbox GL JS (v0.4 Specification Compliance)
-          </div>
-        </div>
+        </Panel>
       </div>
     );
   }
 
   return (
-    <div style={{ position: 'relative', width: '100%', height: '100%', borderRadius: '12px', overflow: 'hidden' }}>
+    <div style={{ position: 'relative', width: '100%', height: '100%', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
       <div ref={mapContainerRef} style={{ width: '100%', height: '100%' }} />
 
       {/* Mapbox Style Switcher Control */}
-      <div
-        className="glass-panel"
+      <Panel
+        level="hud"
+        padded={false}
         style={{
           position: 'absolute',
-          top: '20px',
-          right: '20px',
+          top: '16px',
+          right: '16px',
           zIndex: 10,
-          padding: '6px',
-          borderRadius: '10px',
+          padding: '3px',
+          borderRadius: 'var(--radius-sm)',
           display: 'flex',
-          gap: '4px',
+          gap: '2px',
         }}
       >
-        <button
-          onClick={() => setMapStyle('dark')}
-          style={{
-            padding: '6px 12px',
-            borderRadius: '6px',
-            border: 'none',
-            background: mapStyle === 'dark' ? '#6366f1' : 'transparent',
-            color: mapStyle === 'dark' ? '#fff' : 'var(--text-secondary)',
-            fontWeight: 600,
-            fontSize: '11px',
-            cursor: 'pointer',
-          }}
-        >
-          Dark
-        </button>
-        <button
-          onClick={() => setMapStyle('satellite')}
-          style={{
-            padding: '6px 12px',
-            borderRadius: '6px',
-            border: 'none',
-            background: mapStyle === 'satellite' ? '#6366f1' : 'transparent',
-            color: mapStyle === 'satellite' ? '#fff' : 'var(--text-secondary)',
-            fontWeight: 600,
-            fontSize: '11px',
-            cursor: 'pointer',
-          }}
-        >
-          Satellite
-        </button>
-        <button
-          onClick={() => setMapStyle('navigation')}
-          style={{
-            padding: '6px 12px',
-            borderRadius: '6px',
-            border: 'none',
-            background: mapStyle === 'navigation' ? '#6366f1' : 'transparent',
-            color: mapStyle === 'navigation' ? '#fff' : 'var(--text-secondary)',
-            fontWeight: 600,
-            fontSize: '11px',
-            cursor: 'pointer',
-          }}
-        >
-          Navigation
-        </button>
-        <button
-          onClick={() => setMapStyle('streets')}
-          style={{
-            padding: '6px 12px',
-            borderRadius: '6px',
-            border: 'none',
-            background: mapStyle === 'streets' ? '#6366f1' : 'transparent',
-            color: mapStyle === 'streets' ? '#fff' : 'var(--text-secondary)',
-            fontWeight: 600,
-            fontSize: '11px',
-            cursor: 'pointer',
-          }}
-        >
-          Streets
-        </button>
-      </div>
+        {(['dark', 'satellite', 'navigation', 'streets'] as StyleKey[]).map((style) => (
+          <Button
+            key={style}
+            variant={mapStyle === style ? 'primary' : 'ghost'}
+            size="sm"
+            onClick={() => setMapStyle(style)}
+            style={{
+              height: '26px',
+              fontSize: '11px',
+              padding: '0 10px',
+              textTransform: 'capitalize',
+            }}
+          >
+            {style}
+          </Button>
+        ))}
+      </Panel>
 
       {/* Floating Severity Legend */}
-      <div
-        className="glass-panel"
+      <Panel
+        level="hud"
+        padded={false}
         style={{
           position: 'absolute',
           bottom: '20px',
           left: '20px',
           zIndex: 10,
-          padding: '12px 16px',
-          borderRadius: '10px',
+          padding: '8px 14px',
+          borderRadius: 'var(--radius-sm)',
           display: 'flex',
-          gap: '16px',
+          gap: '12px',
           alignItems: 'center',
         }}
       >
-        <span style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+        <span style={{ fontSize: '10px', fontWeight: 700, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
           Severity:
         </span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px' }}>
-          <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#22c55e' }}></span> Low
+        <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '11px', color: 'var(--text-secondary)' }}>
+          <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--severity-low)' }} /> Low
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px' }}>
-          <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#eab308' }}></span> Medium
+        <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '11px', color: 'var(--text-secondary)' }}>
+          <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--severity-medium)' }} /> Medium
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px' }}>
-          <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#f97316' }}></span> High
+        <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '11px', color: 'var(--text-secondary)' }}>
+          <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--severity-high)' }} /> High
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px' }}>
-          <span style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#ef4444' }}></span> Critical
+        <div style={{ display: 'flex', alignItems: 'center', gap: '5px', fontSize: '11px', color: 'var(--text-secondary)' }}>
+          <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--severity-critical)' }} /> Critical
         </div>
-      </div>
+      </Panel>
     </div>
   );
 };
